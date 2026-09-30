@@ -32,143 +32,97 @@ function sleep(ms) {
 ========================================================= */
 
 async function generateWithFallback(params) {
-
   /*
-   * We try the current model first.
-   *
-   * If Gemini returns 503, we wait and retry.
-   * If it continues failing, we move to another
-   * currently available Flash model.
+   * Using current, production-ready Gemini models.
+   * If a model returns 503/429, we retry with backoff.
+   * If a model returns 404 (not found), we immediately 
+   * skip to the next model in the array.
    */
-
   const models = [
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash"
+    "gemini-2.5-flash",
+    "gemini-2.5-pro"
   ];
-
 
   let lastError = null;
 
-
   for (const model of models) {
-
     for (let attempt = 1; attempt <= 3; attempt++) {
-
       try {
+        console.log(`Trying \({model} - attempt\){attempt}/3`);
 
-        console.log(
-          `Trying ${model} - attempt ${attempt}/3`
-        );
-
-
-        const response =
-          await ai.models.generateContent({
-
-            model,
-
-            contents: [
-              {
-                role: "user",
-
-                parts: params.parts
-              }
-            ],
-
-            config: {
-              systemInstruction:
-                params.systemInstruction,
-
-              responseMimeType:
-                "application/json",
-
-              temperature: 0.1,
-
-              maxOutputTokens: 5000
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: params.parts
             }
+          ],
+          config: {
+            systemInstruction: params.systemInstruction,
+            responseMimeType: "application/json",
+            temperature: 0.1,
+            maxOutputTokens: 5000
+          }
+        });
 
-          });
-
-
-        console.log(
-          `Gemini succeeded using ${model}`
-        );
-
-
+        console.log(`Gemini succeeded using ${model}`);
         return response;
 
-
       } catch (error) {
-
         lastError = error;
 
-
-        const message =
-          error?.message ||
-          String(error);
-
-
-        const status =
-          error?.status ||
-          error?.code;
-
+        const message = error?.message || String(error);
+        const status = error?.status || error?.code;
 
         const isOverloaded =
           status === 503 ||
+          status === 429 ||
           message.includes("503") ||
+          message.includes("429") ||
           message.toLowerCase().includes("high demand") ||
           message.toLowerCase().includes("overloaded") ||
           message.toLowerCase().includes("unavailable");
 
+        const isNotFound =
+          status === 404 ||
+          message.includes("404") ||
+          message.toLowerCase().includes("not found");
 
-        console.error(
-          `${model} attempt ${attempt} failed:`,
-          message
-        );
-
+        console.error(`\({model} attempt\){attempt} failed:`, message);
 
         /*
-         * If this isn't a temporary overload,
-         * don't waste time retrying it.
+         * If the model isn't found (404), don't retry it—
+         * break out of attempt loop and try the next model.
          */
-
-        if (!isOverloaded) {
-
-          throw error;
-
+        if (isNotFound) {
+          console.warn(`Model ${model} not found. Skipping to next model...`);
+          break; 
         }
 
+        /*
+         * If it's a general error that isn't temporary overload, throw it.
+         */
+        if (!isOverloaded) {
+          throw error;
+        }
 
         /*
-         * Increasing delay:
-         *
+         * Increasing delay for temporary overloads:
          * attempt 1 -> 2 seconds
          * attempt 2 -> 5 seconds
          * attempt 3 -> move to next model
          */
-
         if (attempt === 1) {
-
           await sleep(2000);
-
         } else if (attempt === 2) {
-
           await sleep(5000);
-
         }
-
       }
-
     }
-
   }
 
-
-  throw lastError ||
-    new Error(
-      "All Gemini models are temporarily unavailable."
-    );
+  throw lastError || new Error("All Gemini models are temporarily unavailable.");
 }
 
 
@@ -177,44 +131,20 @@ async function generateWithFallback(params) {
 ========================================================= */
 
 function parseDataUrl(dataUrl) {
-
-  if (
-    typeof dataUrl !== "string"
-  ) {
-
-    throw new Error(
-      "Invalid image data."
-    );
-
+  if (typeof dataUrl !== "string") {
+    throw new Error("Invalid image data.");
   }
 
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
 
-  const match =
-    dataUrl.match(
-      /^data:(.+?);base64,(.+)$/
-    );
-
-
-  if (
-    !match ||
-    match.length !== 3
-  ) {
-
-    throw new Error(
-      "Invalid image format. Expected a base64 data URL."
-    );
-
+  if (!match || match.length !== 3) {
+    throw new Error("Invalid image format. Expected a base64 data URL.");
   }
-
 
   return {
-
     mimeType: match[1],
-
     data: match[2]
-
   };
-
 }
 
 
@@ -223,120 +153,54 @@ function parseDataUrl(dataUrl) {
 ========================================================= */
 
 export default async function handler(req, res) {
-
   /*
    * CORS headers
    */
-
-  Object.entries(
-    corsHeaders()
-  ).forEach(
-    ([key, value]) => {
-      res.setHeader(
-        key,
-        value
-      );
-    }
-  );
-
+  Object.entries(corsHeaders()).forEach(([key, value]) => {
+    res.setHeader(key, value);
+  });
 
   /*
    * OPTIONS
    */
-
-  if (
-    req.method === "OPTIONS"
-  ) {
-
-    return res
-      .status(200)
-      .end();
-
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
-
 
   /*
    * POST ONLY
    */
-
-  if (
-    req.method !== "POST"
-  ) {
-
-    return res
-      .status(405)
-      .json({
-        error:
-          "Method not allowed"
-      });
-
+  if (req.method !== "POST") {
+    return res.status(405).json({
+      error: "Method not allowed"
+    });
   }
 
-
   try {
-
     /* =====================================================
        BODY
     ====================================================== */
+    const body = req.body || {};
 
-    const body =
-      req.body || {};
+    const frontImage = body.frontImage || body.frontBase64;
+    const backImage = body.backImage || body.backBase64;
 
-
-    /*
-     * Shopify code sends:
-     *
-     * frontImage
-     * backImage
-     */
-
-    const frontImage =
-      body.frontImage ||
-      body.frontBase64;
-
-
-    const backImage =
-      body.backImage ||
-      body.backBase64;
-
-
-    if (
-      !frontImage ||
-      !backImage
-    ) {
-
-      return res
-        .status(400)
-        .json({
-          error:
-            "Missing front or back image."
-        });
-
+    if (!frontImage || !backImage) {
+      return res.status(400).json({
+        error: "Missing front or back image."
+      });
     }
-
 
     /* =====================================================
        PARSE IMAGES
     ====================================================== */
-
-    const front =
-      parseDataUrl(
-        frontImage
-      );
-
-
-    const back =
-      parseDataUrl(
-        backImage
-      );
-
+    const front = parseDataUrl(frontImage);
+    const back = parseDataUrl(backImage);
 
     /* =====================================================
        SYSTEM INSTRUCTION
     ====================================================== */
-
     const systemInstruction = `
-
 You are an expert trading card identification and
 condition pre-screening AI.
 
@@ -531,200 +395,94 @@ Use exactly this structure:
 
   }
 }
-
 `;
-
 
     /* =====================================================
        GEMINI
     ====================================================== */
-
-    const response =
-      await generateWithFallback({
-
-        systemInstruction,
-
-        parts: [
-
-          {
-            text:
-              "Analyse the front and back photographs of this trading card and return the complete JSON grading pre-screen."
-          },
-
-          {
-            inlineData: {
-
-              mimeType:
-                front.mimeType,
-
-              data:
-                front.data
-
-            }
-
-          },
-
-          {
-            inlineData: {
-
-              mimeType:
-                back.mimeType,
-
-              data:
-                back.data
-
-            }
-
+    const response = await generateWithFallback({
+      systemInstruction,
+      parts: [
+        {
+          text: "Analyse the front and back photographs of this trading card and return the complete JSON grading pre-screen."
+        },
+        {
+          inlineData: {
+            mimeType: front.mimeType,
+            data: front.data
           }
-
-        ]
-
-      });
-
+        },
+        {
+          inlineData: {
+            mimeType: back.mimeType,
+            data: back.data
+          }
+        }
+      ]
+    });
 
     /* =====================================================
        RESPONSE TEXT
     ====================================================== */
+    let text = response.text;
 
-    let text =
-      response.text;
-
-
-    if (
-      !text
-    ) {
-
-      throw new Error(
-        "Gemini returned an empty response."
-      );
-
+    if (!text) {
+      throw new Error("Gemini returned an empty response.");
     }
 
-
-    text =
-      text.trim();
-
+    text = text.trim();
 
     /*
      * Remove accidental markdown fences
      */
-
-    if (
-      text.startsWith("```json")
-    ) {
-
-      text =
-        text
-          .replace(
-            /^```json/,
-            ""
-          )
-          .replace(
-            /```$/,
-            ""
-          )
-          .trim();
-
-    } else if (
-      text.startsWith("```")
-    ) {
-
-      text =
-        text
-          .replace(
-            /^```/,
-            ""
-          )
-          .replace(
-            /```$/,
-            ""
-          )
-          .trim();
-
+    if (text.startsWith("```json")) {
+      text = text
+        .replace(/^```json/, "")
+        .replace(/```$/, "")
+        .trim();
+    } else if (text.startsWith("```")) {
+      text = text
+        .replace(/^```/, "")
+        .replace(/```$/, "")
+        .trim();
     }
-
 
     /* =====================================================
        PARSE JSON
     ====================================================== */
-
     let result;
 
-
     try {
-
-      result =
-        JSON.parse(text);
-
+      result = JSON.parse(text);
     } catch (jsonError) {
-
-      console.error(
-        "Gemini returned invalid JSON:",
-        text
-      );
-
-      throw new Error(
-        "Gemini returned invalid JSON."
-      );
-
+      console.error("Gemini returned invalid JSON:", text);
+      throw new Error("Gemini returned invalid JSON.");
     }
-
 
     /* =====================================================
        RETURN
     ====================================================== */
-
-    return res
-      .status(200)
-      .json(result);
-
+    return res.status(200).json(result);
 
   } catch (error) {
+    console.error("Vercel grading error:", error);
 
-    console.error(
-      "Vercel grading error:",
-      error
-    );
-
-
-    const message =
-      error?.message ||
-      "Internal server error.";
-
-
-    /*
-     * Tell the frontend specifically when all
-     * Gemini models were unavailable.
-     */
+    const message = error?.message || "Internal server error.";
 
     if (
       message.includes("high demand") ||
       message.includes("503") ||
+      message.includes("429") ||
       message.includes("unavailable") ||
       message.includes("overloaded")
     ) {
-
-      return res
-        .status(503)
-        .json({
-
-          error:
-            "Gemini is temporarily overloaded. The system tried multiple Gemini models but they are currently unavailable. Please try again in a few seconds."
-
-        });
-
+      return res.status(503).json({
+        error: "Gemini is temporarily overloaded. The system tried multiple Gemini models but they are currently unavailable. Please try again in a few seconds."
+      });
     }
 
-
-    return res
-      .status(500)
-      .json({
-
-        error:
-          message
-
-      });
-
+    return res.status(500).json({
+      error: message
+    });
   }
-
 }

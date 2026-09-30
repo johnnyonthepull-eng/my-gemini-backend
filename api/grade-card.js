@@ -29,11 +29,10 @@ function sleep(ms) {
 ========================================================= */
 
 async function generateWithFallback(params) {
-  // Expanded fallback chain to prevent temporary capacity overloads
+  // Purged retired models completely; using only active production flash models
   const models = [
     "gemini-3.8-flash",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash"
+    "gemini-3.5-flash"
   ];
 
   let lastError = null;
@@ -95,9 +94,9 @@ async function generateWithFallback(params) {
         }
 
         if (attempt === 1) {
-          await sleep(1500);
+          await sleep(2000);
         } else if (attempt === 2) {
-          await sleep(3000);
+          await sleep(5000);
         }
       }
     }

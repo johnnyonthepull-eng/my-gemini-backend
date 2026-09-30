@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "@google/genai";
+
 export const config = {
   api: {
     bodyParser: {
@@ -28,68 +30,6 @@ function parseDataUrl(dataUrl) {
   };
 }
 
-async function callGeminiApi(systemInstruction, front, back) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
-  }
-
-  // Use the active model endpoint directly
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-  const payload = {
-    system_instruction: {
-      parts: [{ text: systemInstruction }]
-    },
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-          },
-          {
-            inline_data: {
-              mime_type: front.mimeType,
-              data: front.data
-            }
-          },
-          {
-            inline_data: {
-              mime_type: back.mimeType,
-              data: back.data
-            }
-          }
-        ]
-      }
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.0,
-      maxOutputTokens: 5000
-    }
-  };
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Gemini API error (\({response.status}):\){errorBody}`);
-  }
-
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
-  if (!candidate || !candidate.content?.parts?.[0]?.text) {
-    throw new Error("Invalid response structure from Gemini API.");
-  }
-
-  return candidate.content.parts[0].text;
-}
-
 export default async function handler(req, res) {
   Object.entries(corsHeaders()).forEach(([key, value]) => {
     res.setHeader(key, value);
@@ -104,6 +44,13 @@ export default async function handler(req, res) {
   }
 
   try {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
     const body = req.body || {};
     const frontImage = body.frontImage || body.frontBase64;
     const backImage = body.backImage || body.backBase64;
@@ -195,9 +142,44 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    let text = await callGeminiApi(systemInstruction, front, back);
-    text = text.trim();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
+            },
+            {
+              inlineData: {
+                mimeType: front.mimeType,
+                data: front.data
+              }
+            },
+            {
+              inlineData: {
+                mimeType: back.mimeType,
+                data: back.data
+              }
+            }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.0,
+        maxOutputTokens: 5000
+      }
+    });
 
+    let text = response.text;
+    if (!text) {
+      throw new Error("Gemini returned an empty response.");
+    }
+
+    text = text.trim();
     if (text.startsWith("```json")) {
       text = text.replace(/^```json/, "").replace(/```$/, "").trim();
     } else if (text.startsWith("```")) {

@@ -151,12 +151,12 @@ Return ONLY valid JSON matching this exact structure:
     let response = null;
     let lastError = null;
 
-    // Try keys with gemini-3.8-flash
+    // Utilize gemini-1.5-flash which provides a 1,500 request daily free-tier quota pool
     for (const key of apiKeys) {
       try {
         const ai = new GoogleGenAI({ apiKey: key });
         response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
+          model: "gemini-1.5-flash",
           contents: [
             {
               role: "user",
@@ -177,7 +177,7 @@ Return ONLY valid JSON matching this exact structure:
         if (response && response.text) break;
       } catch (err) {
         lastError = err;
-        console.error("Key attempt failed with error:", err?.message || err);
+        console.error("Key attempt failed:", err?.message || err);
       }
     }
 

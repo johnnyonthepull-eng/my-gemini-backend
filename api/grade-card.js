@@ -4,534 +4,727 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-const MODEL = "gemini-3.8-flash";
 
-export const config = {
-  runtime: "edge",
-};
+/* =========================================================
+   CORS
+========================================================= */
 
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json",
   };
 }
 
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: corsHeaders(),
-  });
+
+/* =========================================================
+   SLEEP
+========================================================= */
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function parseImage(dataUrl) {
-  if (!dataUrl) {
-    throw new Error("Image data is missing.");
-  }
 
-  // Accept either a complete data URL or raw base64.
-  if (dataUrl.startsWith("data:")) {
-    const match = dataUrl.match(
-      /^data:([^;]+);base64,(.+)$/
-    );
+/* =========================================================
+   GEMINI REQUEST WITH RETRIES + MODEL FALLBACK
+========================================================= */
 
-    if (!match) {
-      throw new Error("Invalid image data URL.");
+async function generateWithFallback(params) {
+
+  /*
+   * We try the current model first.
+   *
+   * If Gemini returns 503, we wait and retry.
+   * If it continues failing, we move to another
+   * currently available Flash model.
+   */
+
+  const models = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash"
+  ];
+
+
+  let lastError = null;
+
+
+  for (const model of models) {
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+
+      try {
+
+        console.log(
+          `Trying ${model} - attempt ${attempt}/3`
+        );
+
+
+        const response =
+          await ai.models.generateContent({
+
+            model,
+
+            contents: [
+              {
+                role: "user",
+
+                parts: params.parts
+              }
+            ],
+
+            config: {
+              systemInstruction:
+                params.systemInstruction,
+
+              responseMimeType:
+                "application/json",
+
+              temperature: 0.1,
+
+              maxOutputTokens: 5000
+            }
+
+          });
+
+
+        console.log(
+          `Gemini succeeded using ${model}`
+        );
+
+
+        return response;
+
+
+      } catch (error) {
+
+        lastError = error;
+
+
+        const message =
+          error?.message ||
+          String(error);
+
+
+        const status =
+          error?.status ||
+          error?.code;
+
+
+        const isOverloaded =
+          status === 503 ||
+          message.includes("503") ||
+          message.toLowerCase().includes("high demand") ||
+          message.toLowerCase().includes("overloaded") ||
+          message.toLowerCase().includes("unavailable");
+
+
+        console.error(
+          `${model} attempt ${attempt} failed:`,
+          message
+        );
+
+
+        /*
+         * If this isn't a temporary overload,
+         * don't waste time retrying it.
+         */
+
+        if (!isOverloaded) {
+
+          throw error;
+
+        }
+
+
+        /*
+         * Increasing delay:
+         *
+         * attempt 1 -> 2 seconds
+         * attempt 2 -> 5 seconds
+         * attempt 3 -> move to next model
+         */
+
+        if (attempt === 1) {
+
+          await sleep(2000);
+
+        } else if (attempt === 2) {
+
+          await sleep(5000);
+
+        }
+
+      }
+
     }
 
-    return {
-      mimeType: match[1],
-      data: match[2],
-    };
   }
+
+
+  throw lastError ||
+    new Error(
+      "All Gemini models are temporarily unavailable."
+    );
+}
+
+
+/* =========================================================
+   DATA URL PARSER
+========================================================= */
+
+function parseDataUrl(dataUrl) {
+
+  if (
+    typeof dataUrl !== "string"
+  ) {
+
+    throw new Error(
+      "Invalid image data."
+    );
+
+  }
+
+
+  const match =
+    dataUrl.match(
+      /^data:(.+?);base64,(.+)$/
+    );
+
+
+  if (
+    !match ||
+    match.length !== 3
+  ) {
+
+    throw new Error(
+      "Invalid image format. Expected a base64 data URL."
+    );
+
+  }
+
 
   return {
-    mimeType: "image/jpeg",
-    data: dataUrl,
+
+    mimeType: match[1],
+
+    data: match[2]
+
   };
+
 }
 
-export default async function handler(req) {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders(),
-    });
+
+/* =========================================================
+   MAIN VERCEL HANDLER
+========================================================= */
+
+export default async function handler(req, res) {
+
+  /*
+   * CORS headers
+   */
+
+  Object.entries(
+    corsHeaders()
+  ).forEach(
+    ([key, value]) => {
+      res.setHeader(
+        key,
+        value
+      );
+    }
+  );
+
+
+  /*
+   * OPTIONS
+   */
+
+  if (
+    req.method === "OPTIONS"
+  ) {
+
+    return res
+      .status(200)
+      .end();
+
   }
 
-  if (req.method !== "POST") {
-    return jsonResponse(
-      {
-        error: "Method not allowed. Use POST.",
-      },
-      405
-    );
+
+  /*
+   * POST ONLY
+   */
+
+  if (
+    req.method !== "POST"
+  ) {
+
+    return res
+      .status(405)
+      .json({
+        error:
+          "Method not allowed"
+      });
+
   }
+
 
   try {
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error(
-        "GEMINI_API_KEY is not configured in Vercel."
-      );
-    }
 
-    const body = await req.json();
+    /* =====================================================
+       BODY
+    ====================================================== */
 
-    const frontBase64 =
-      body.frontBase64 || body.frontImage;
+    const body =
+      req.body || {};
 
-    const backBase64 =
-      body.backBase64 || body.backImage;
 
-    if (!frontBase64 || !backBase64) {
-      return jsonResponse(
-        {
+    /*
+     * Shopify code sends:
+     *
+     * frontImage
+     * backImage
+     */
+
+    const frontImage =
+      body.frontImage ||
+      body.frontBase64;
+
+
+    const backImage =
+      body.backImage ||
+      body.backBase64;
+
+
+    if (
+      !frontImage ||
+      !backImage
+    ) {
+
+      return res
+        .status(400)
+        .json({
           error:
-            "Missing front or back image.",
-        },
-        400
-      );
+            "Missing front or back image."
+        });
+
     }
 
-    const front = parseImage(frontBase64);
-    const back = parseImage(backBase64);
+
+    /* =====================================================
+       PARSE IMAGES
+    ====================================================== */
+
+    const front =
+      parseDataUrl(
+        frontImage
+      );
+
+
+    const back =
+      parseDataUrl(
+        backImage
+      );
+
+
+    /* =====================================================
+       SYSTEM INSTRUCTION
+    ====================================================== */
 
     const systemInstruction = `
-You are an expert trading card condition pre-screening AI.
 
-You analyze photographs of trading cards and provide realistic
-pre-screening estimates for PSA, Beckett/BGS and ACE Grading.
+You are an expert trading card identification and
+condition pre-screening AI.
+
+You are analysing photographs of a physical trading card.
 
 IMPORTANT LIMITATIONS:
 
-- You are analyzing photographs only.
-- Do NOT claim to perform infrared scanning.
-- Do NOT claim to perform blue-light scanning.
-- Do NOT claim to measure physical millimeters with 100% precision.
-- Do NOT claim that a grade is guaranteed.
-- Do NOT claim that you can detect hidden dents, indentations,
-  creases or microscopic defects that cannot actually be seen
-  in the supplied photographs.
-- Clearly distinguish visible evidence from uncertainty.
+You can only assess what is actually visible in the
+photographs.
 
-Centering should be expressed as an ESTIMATED ratio based on
-visible borders.
+Do NOT claim to have used infrared cameras,
+ultraviolet cameras, microscopes, spectrometers,
+or physical measuring equipment.
 
-Analyze both the front AND back carefully.
+Do NOT claim 100% certainty.
 
-Look for:
+Do NOT invent defects that cannot be seen.
+
+Do NOT invent card information.
+
+If card identification is uncertain, say so and lower
+the identification confidence.
+
+If centering cannot be measured reliably from the
+photograph, provide an estimate and clearly describe
+the limitation.
+
+The output is an AI pre-screening estimate and NOT an
+official PSA, Beckett or ACE grade.
+
+=========================================================
+CARD IDENTIFICATION
+=========================================================
+
+Identify:
+
+- Card name
+- Set / expansion
+- Card number
+- Rarity
+- Language
+- Variant
+- Identification confidence
+
+=========================================================
+CONDITION ANALYSIS
+=========================================================
+
+Inspect both front and back photographs.
+
+Assess:
 
 1. Centering
 2. Corners
 3. Edges
 4. Surface
-5. Whitening
-6. Chipping
-7. Silvering
-8. Print lines
-9. Scratches
-10. Scuffs
-11. Visible dents
-12. Visible creases
-13. Visible alignment issues
-14. Cutting or print-quality issues
-
-For each grading company provide a realistic estimated grade.
-
-PSA:
-Use the PSA-style 1-10 scale.
-
-BGS:
-Use Beckett-style grades and provide:
-- Centering
-- Corners
-- Edges
-- Surface
-
-ACE:
-Provide an estimated ACE-style numerical grade.
-
-CARD IDENTIFICATION:
-
-Identify, where possible:
-- Card name
-- Set
-- Card number
-- Rarity
-- Language
-- Variant
-
-Do not invent card information.
-
-If identification is uncertain, say so.
-
-RECOMMENDATION:
-
-The recommendation must be based on the photographed condition
-and the estimated grades.
-
-You may recommend PSA, BGS or ACE based on how the card appears
-to fit the estimated grading characteristics.
-
-Do NOT claim the recommendation guarantees increased resale value.
-
-Return ONLY valid JSON.
-No markdown.
-No code fences.
-`;
-
-    const userPrompt = `
-Analyze the following trading card.
-
-The first image is the FRONT.
-The second image is the BACK.
-
-Identify the card and provide the complete condition
-pre-screening report.
+5. Visible whitening
+6. Visible chipping
+7. Visible scratches
+8. Visible print lines
+9. Visible dents
+10. Visible creases
+11. Visible alignment issues
 
 Pay particular attention to:
-- front centering
-- back centering
-- corners
-- edges
-- surface
-- visible whitening
-- visible scratches
-- visible print lines
-- visible dents
-- visible creases
-- visible alignment issues
 
-Return the exact JSON structure requested.
+- top/bottom centering
+- left/right centering
+- back centering
+- corner whitening
+- edge whitening
+- silvering
+- scratches
+- surface marks
+- print defects
+
+=========================================================
+PSA ESTIMATE
+=========================================================
+
+Provide a realistic estimated PSA grade.
+
+Do not automatically give PSA 10.
+
+The grade must be based on visible evidence.
+
+=========================================================
+BGS ESTIMATE
+=========================================================
+
+Provide:
+
+- overall estimated BGS grade
+- centering subgrade
+- corners subgrade
+- edges subgrade
+- surface subgrade
+
+Do not automatically give 10 subgrades.
+
+=========================================================
+ACE ESTIMATE
+=========================================================
+
+Provide a realistic estimated ACE grade.
+
+=========================================================
+GRADING SERVICE RECOMMENDATION
+=========================================================
+
+Recommend the grading service based ONLY on the
+predicted condition and the characteristics visible
+in the photographs.
+
+Do not claim knowledge of current market prices.
+
+Explain why the recommended service fits the predicted
+condition.
+
+=========================================================
+SUMMARY
+=========================================================
+
+Give a concise overall condition summary.
+
+=========================================================
+JSON
+=========================================================
+
+Return ONLY valid JSON.
+
+Use exactly this structure:
+
+{
+  "identification": {
+    "cardName": "",
+    "setName": "",
+    "cardNumber": "",
+    "rarity": "",
+    "language": "",
+    "variant": "",
+    "confidence": ""
+  },
+
+  "grades": {
+
+    "psa": {
+      "grade": "",
+      "confidence": "",
+      "reason": ""
+    },
+
+    "bgs": {
+      "grade": "",
+      "confidence": "",
+      "subgrades": {
+        "centering": "",
+        "corners": "",
+        "edges": "",
+        "surface": ""
+      },
+      "reason": ""
+    },
+
+    "ace": {
+      "grade": "",
+      "confidence": "",
+      "reason": ""
+    }
+
+  },
+
+  "recommendation": {
+    "service": "",
+    "estimatedGrade": "",
+    "verdict": "",
+    "reason": ""
+  },
+
+  "summary": "",
+
+  "diagnostics": {
+
+    "frontCentering": "",
+    "backCentering": "",
+
+    "cornerFlaws": [],
+
+    "edgeFlaws": [],
+
+    "surfaceFlaws": []
+
+  }
+}
+
 `;
 
-    const response = await ai.models.generateContent({
-      model: MODEL,
 
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: userPrompt,
-            },
+    /* =====================================================
+       GEMINI
+    ====================================================== */
 
-            {
-              inlineData: {
-                mimeType: front.mimeType,
-                data: front.data,
-              },
-            },
+    const response =
+      await generateWithFallback({
 
-            {
-              inlineData: {
-                mimeType: back.mimeType,
-                data: back.data,
-              },
-            },
-          ],
-        },
-      ],
-
-      config: {
         systemInstruction,
 
-        responseMimeType:
-          "application/json",
+        parts: [
 
-        thinkingConfig: {
-          thinkingLevel: "medium",
-        },
-
-        responseSchema: {
-          type: "object",
-
-          properties: {
-            cardIdentification: {
-              type: "object",
-
-              properties: {
-                cardName: {
-                  type: "string",
-                },
-
-                setName: {
-                  type: "string",
-                },
-
-                cardNumber: {
-                  type: "string",
-                },
-
-                rarity: {
-                  type: "string",
-                },
-
-                language: {
-                  type: "string",
-                },
-
-                variant: {
-                  type: "string",
-                },
-
-                identificationConfidence: {
-                  type: "string",
-                },
-              },
-
-              required: [
-                "cardName",
-                "setName",
-                "cardNumber",
-                "rarity",
-                "language",
-                "variant",
-                "identificationConfidence",
-              ],
-            },
-
-            companyPredictions: {
-              type: "object",
-
-              properties: {
-                PSA: {
-                  type: "object",
-
-                  properties: {
-                    predictedGrade: {
-                      type: "string",
-                    },
-
-                    confidence: {
-                      type: "string",
-                    },
-
-                    reasoning: {
-                      type: "string",
-                    },
-                  },
-
-                  required: [
-                    "predictedGrade",
-                    "confidence",
-                    "reasoning",
-                  ],
-                },
-
-                BGS: {
-                  type: "object",
-
-                  properties: {
-                    predictedGrade: {
-                      type: "string",
-                    },
-
-                    confidence: {
-                      type: "string",
-                    },
-
-                    estimatedSubgrades: {
-                      type: "object",
-
-                      properties: {
-                        centering: {
-                          type: "string",
-                        },
-
-                        corners: {
-                          type: "string",
-                        },
-
-                        edges: {
-                          type: "string",
-                        },
-
-                        surface: {
-                          type: "string",
-                        },
-                      },
-
-                      required: [
-                        "centering",
-                        "corners",
-                        "edges",
-                        "surface",
-                      ],
-                    },
-
-                    reasoning: {
-                      type: "string",
-                    },
-                  },
-
-                  required: [
-                    "predictedGrade",
-                    "confidence",
-                    "estimatedSubgrades",
-                    "reasoning",
-                  ],
-                },
-
-                ACE: {
-                  type: "object",
-
-                  properties: {
-                    predictedGrade: {
-                      type: "string",
-                    },
-
-                    confidence: {
-                      type: "string",
-                    },
-
-                    reasoning: {
-                      type: "string",
-                    },
-                  },
-
-                  required: [
-                    "predictedGrade",
-                    "confidence",
-                    "reasoning",
-                  ],
-                },
-              },
-
-              required: [
-                "PSA",
-                "BGS",
-                "ACE",
-              ],
-            },
-
-            subgrades: {
-              type: "object",
-
-              properties: {
-                centeringFront: {
-                  type: "string",
-                },
-
-                centeringBack: {
-                  type: "string",
-                },
-
-                cornersFlaws: {
-                  type: "array",
-                  items: {
-                    type: "string",
-                  },
-                },
-
-                edgesFlaws: {
-                  type: "array",
-                  items: {
-                    type: "string",
-                  },
-                },
-
-                surfaceFlaws: {
-                  type: "array",
-                  items: {
-                    type: "string",
-                  },
-                },
-              },
-
-              required: [
-                "centeringFront",
-                "centeringBack",
-                "cornersFlaws",
-                "edgesFlaws",
-                "surfaceFlaws",
-              ],
-            },
-
-            gradeSummary: {
-              type: "string",
-            },
-
-            recommendation: {
-              type: "object",
-
-              properties: {
-                service: {
-                  type: "string",
-                },
-
-                verdict: {
-                  type: "string",
-                },
-
-                reason: {
-                  type: "string",
-                },
-              },
-
-              required: [
-                "service",
-                "verdict",
-                "reason",
-              ],
-            },
+          {
+            text:
+              "Analyse the front and back photographs of this trading card and return the complete JSON grading pre-screen."
           },
 
-          required: [
-            "cardIdentification",
-            "companyPredictions",
-            "subgrades",
-            "gradeSummary",
-            "recommendation",
-          ],
-        },
-      },
-    });
+          {
+            inlineData: {
+
+              mimeType:
+                front.mimeType,
+
+              data:
+                front.data
+
+            }
+
+          },
+
+          {
+            inlineData: {
+
+              mimeType:
+                back.mimeType,
+
+              data:
+                back.data
+
+            }
+
+          }
+
+        ]
+
+      });
+
+
+    /* =====================================================
+       RESPONSE TEXT
+    ====================================================== */
 
     let text =
-      response.text || "";
+      response.text;
 
-    text = text.trim();
 
-    // Remove accidental markdown fences if returned.
-    if (text.startsWith("```json")) {
-      text = text
-        .replace(/^```json\s*/, "")
-        .replace(/\s*```$/, "")
-        .trim();
+    if (
+      !text
+    ) {
+
+      throw new Error(
+        "Gemini returned an empty response."
+      );
+
     }
 
-    if (text.startsWith("```")) {
-      text = text
-        .replace(/^```\s*/, "")
-        .replace(/\s*```$/, "")
-        .trim();
+
+    text =
+      text.trim();
+
+
+    /*
+     * Remove accidental markdown fences
+     */
+
+    if (
+      text.startsWith("```json")
+    ) {
+
+      text =
+        text
+          .replace(
+            /^```json/,
+            ""
+          )
+          .replace(
+            /```$/,
+            ""
+          )
+          .trim();
+
+    } else if (
+      text.startsWith("```")
+    ) {
+
+      text =
+        text
+          .replace(
+            /^```/,
+            ""
+          )
+          .replace(
+            /```$/,
+            ""
+          )
+          .trim();
+
     }
 
-    const result =
-      JSON.parse(text);
 
-    return jsonResponse(
-      result,
-      200
-    );
+    /* =====================================================
+       PARSE JSON
+    ====================================================== */
+
+    let result;
+
+
+    try {
+
+      result =
+        JSON.parse(text);
+
+    } catch (jsonError) {
+
+      console.error(
+        "Gemini returned invalid JSON:",
+        text
+      );
+
+      throw new Error(
+        "Gemini returned invalid JSON."
+      );
+
+    }
+
+
+    /* =====================================================
+       RETURN
+    ====================================================== */
+
+    return res
+      .status(200)
+      .json(result);
+
 
   } catch (error) {
 
     console.error(
-      "CARD GRADING ERROR:",
+      "Vercel grading error:",
       error
     );
 
-    return jsonResponse(
-      {
+
+    const message =
+      error?.message ||
+      "Internal server error.";
+
+
+    /*
+     * Tell the frontend specifically when all
+     * Gemini models were unavailable.
+     */
+
+    if (
+      message.includes("high demand") ||
+      message.includes("503") ||
+      message.includes("unavailable") ||
+      message.includes("overloaded")
+    ) {
+
+      return res
+        .status(503)
+        .json({
+
+          error:
+            "Gemini is temporarily overloaded. The system tried multiple Gemini models but they are currently unavailable. Please try again in a few seconds."
+
+        });
+
+    }
+
+
+    return res
+      .status(500)
+      .json({
+
         error:
-          error?.message ||
-          "Gemini card analysis failed.",
-      },
-      500
-    );
+          message
+
+      });
+
   }
+
 }

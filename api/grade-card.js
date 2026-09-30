@@ -58,6 +58,10 @@ Analyze the front and back images with absolute forensic precision and return va
 - PSA: Accurate, slightly more forgiving on minor back-surface or centering variances if the front presentation is pristine.
 - ACE GRADING: Collector-friendly, slightly more lenient on minor factory quirks while rewarding clean eye appeal.
 
+4. SUBMISSION RECOMMENDATION & WORTH-SENDING SUMMARY:
+- Evaluate whether the card is worth sending to a professional grading company based on projected grade return vs. grading/shipping overhead.
+- Give a direct verdict ("Worth Sending", "Borderline", or "Not Worth Sending") and a 1-2 sentence executive summary.
+
 Provide a detailed condition analysis and grade estimations matching this exact JSON structure:
 {
   "companyPredictions": {
@@ -85,6 +89,12 @@ Provide a detailed condition analysis and grade estimations matching this exact 
     "centeringBack": "Exact mm measurements and ratio",
     "cornersFlaws": ["List specific micro-flaws detected under blue-light/IR simulation"],
     "edgesFlaws": ["List specific edge chipping, silvering, or rough cuts detected"]
+  },
+  "submissionRecommendation": {
+    "worthGrading": true,
+    "recommendedCompany": "PSA",
+    "verdict": "Worth Sending",
+    "summary": "Strong front presentation and solid centering outweigh minor back corner whitening, making this a prime candidate for a PSA 9/10 submission."
   }
 }
 `;

@@ -33,14 +33,11 @@ function sleep(ms) {
 
 async function generateWithFallback(params) {
   /*
-   * Updated with current, active Gemini model endpoints.
-   * If a model returns 503/429, we retry with backoff.
-   * If a model returns 404 (not found), we immediately 
-   * skip to the next model in the array.
+   * Stable production-tier model IDs for reliable routing.
    */
   const models = [
     "gemini-3.8-flash",
-    "gemini-3.1-pro-preview"
+    "gemini-2.5-flash"
   ];
 
   let lastError = null;
@@ -92,27 +89,18 @@ async function generateWithFallback(params) {
         console.error(`\({model} attempt\){attempt} failed:`, message);
 
         /*
-         * If the model isn't found (404), don't retry—
-         * break out of attempt loop and try the next model immediately.
+         * If a model isn't found or is restricted on this key, 
+         * skip to the next model immediately.
          */
         if (isNotFound) {
-          console.warn(`Model ${model} not found. Skipping to next model...`);
+          console.warn(`Model ${model} not found or unavailable. Skipping...`);
           break; 
         }
 
-        /*
-         * If it's a general error that isn't temporary overload, throw it.
-         */
         if (!isOverloaded) {
           throw error;
         }
 
-        /*
-         * Increasing delay for temporary overloads:
-         * attempt 1 -> 2 seconds
-         * attempt 2 -> 5 seconds
-         * attempt 3 -> move to next model
-         */
         if (attempt === 1) {
           await sleep(2000);
         } else if (attempt === 2) {
@@ -149,27 +137,18 @@ function parseDataUrl(dataUrl) {
 
 
 /* =========================================================
-   MAIN VERCEL HANDLER
+   MAIN Vercel HANDLER
 ========================================================= */
 
 export default async function handler(req, res) {
-  /*
-   * CORS headers
-   */
   Object.entries(corsHeaders()).forEach(([key, value]) => {
     res.setHeader(key, value);
   });
 
-  /*
-   * OPTIONS
-   */
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  /*
-   * POST ONLY
-   */
   if (req.method !== "POST") {
     return res.status(405).json({
       error: "Method not allowed"
@@ -177,9 +156,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    /* =====================================================
-       BODY
-    ====================================================== */
     const body = req.body || {};
 
     const frontImage = body.frontImage || body.frontBase64;
@@ -191,15 +167,9 @@ export default async function handler(req, res) {
       });
     }
 
-    /* =====================================================
-       PARSE IMAGES
-    ====================================================== */
     const front = parseDataUrl(frontImage);
     const back = parseDataUrl(backImage);
 
-    /* =====================================================
-       SYSTEM INSTRUCTION
-    ====================================================== */
     const systemInstruction = `
 You are an expert trading card identification and
 condition pre-screening AI.
@@ -397,9 +367,6 @@ Use exactly this structure:
 }
 `;
 
-    /* =====================================================
-       GEMINI
-    ====================================================== */
     const response = await generateWithFallback({
       systemInstruction,
       parts: [
@@ -421,9 +388,6 @@ Use exactly this structure:
       ]
     });
 
-    /* =====================================================
-       RESPONSE TEXT
-    ====================================================== */
     let text = response.text;
 
     if (!text) {
@@ -432,9 +396,6 @@ Use exactly this structure:
 
     text = text.trim();
 
-    /*
-     * Remove accidental markdown fences
-     */
     if (text.startsWith("```json")) {
       text = text
         .replace(/^```json/, "")
@@ -447,9 +408,6 @@ Use exactly this structure:
         .trim();
     }
 
-    /* =====================================================
-       PARSE JSON
-    ====================================================== */
     let result;
 
     try {
@@ -459,9 +417,6 @@ Use exactly this structure:
       throw new Error("Gemini returned invalid JSON.");
     }
 
-    /* =====================================================
-       RETURN
-    ====================================================== */
     return res.status(200).json(result);
 
   } catch (error) {

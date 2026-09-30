@@ -1,7 +1,11 @@
 export default async function handler(req, res) {
+  // Force absolute zero caching on Vercel and edge nodes
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -12,7 +16,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { frontImage, backImage } = req.body || {};
+    const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
       return res.status(400).json({ error: "Missing frontImage or backImage payload." });
@@ -34,15 +38,17 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
     }
 
+    // Using stateless URL timestamp parameter to ensure clean pipeline execution
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are a forensic TCG grading scientist and senior authenticator operating with clinical, analytical precision. Your evaluations must read like an official laboratory condition report from PSA, BGS, or CGC. Avoid all vague language, fluff, or generic placeholders.
+    const promptText = `SESSION_NONCE: ${sessionNonce || Date.now()}
+You are a forensic TCG grading scientist and senior authenticator. Perform a completely fresh, independent, isolated evaluation of the newly uploaded images. Do not carry over or assume any data from previous card uploads. 
 
-ANALYTIC & CLINICAL PROTOCOLS:
-1. PRECISE MEASUREMENTS: Calculate front and back border widths down to the tenth of a millimeter (e.g., "1.9 mm") and compute precise centering ratios. If asymmetry exists, explicitly state the directional bias (e.g., "heavy top/left bias").
-2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect (e.g., "reverse top-left corner tip", "front right border center edge silvering", "central artwork horizontal refractive print line"). Never write "None detected" — every card possesses microscopic factory or handling characteristics that must be analyzed analytically.
-3. SUBGRADE MATHEMATICS: Provide rigorous, mathematically consistent sub-grades for Beckett (BGS) where Corners, Edges, Surface, and Centering dictate the final algorithmic convergence.
-4. RIGOROUS JUSTIFICATIONS: Link every grade ceiling directly to physical evidence observed under simulated magnification. Explain the exact mechanical tolerance failure that locks the card out of Gem Mint status.
+CLINICAL & ANALYTIC PROTOCOLS:
+1. PRECISE MEASUREMENTS: Calculate front and back border widths down to the tenth of a millimeter (e.g., "1.9 mm") and compute precise centering ratios.
+2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect. You are strictly forbidden from writing "None detected" unless the card is absolute microscopic perfection (which is mathematically near-impossible). Detail actual texture, cutting lines, or fiber traits.
+3. SUBGRADE MATHEMATICS: Provide rigorous sub-grades for BGS where Corners, Edges, Surface, and Centering dictate the score.
+4. RIGOROUS JUSTIFICATIONS: Link every grade ceiling directly to physical evidence observed under simulated magnification.
 
 Return ONLY a valid JSON object matching this exact key structure:
 {
@@ -61,7 +67,7 @@ Return ONLY a valid JSON object matching this exact key structure:
   "aceLabel": "Analytical assessment detailing structural and finish limitations.",
   "recGrade": "PSA",
   "recLabel": "Strategic market liquidity vs. condition penalty analysis.",
-  "conditionSummary": "An exhaustive, highly analytical paragraph detailing the card's micro-structural integrity, factory finish characteristics, and the exact clinical reasons capping its maximum grade.",
+  "conditionSummary": "An exhaustive, highly analytical paragraph detailing the card's micro-structural integrity and the exact clinical reasons capping its maximum grade.",
   "frontTop": "1.9 mm",
   "frontBottom": "2.1 mm",
   "frontLeft": "2.2 mm",
@@ -103,7 +109,7 @@ Return ONLY a valid JSON object matching this exact key structure:
           }
         ],
         generationConfig: {
-          temperature: 0.1
+          temperature: 0.3 // Slight temperature bump to prevent rigid fallback caching loops
         }
       })
     });

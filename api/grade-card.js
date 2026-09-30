@@ -151,12 +151,13 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
 
+    // Handles both variable naming conventions gracefully
     const frontImage = body.frontImage || body.frontBase64;
     const backImage = body.backImage || body.backBase64;
 
     if (!frontImage || !backImage) {
       return res.status(400).json({
-        error: "Missing front or back image."
+        error: "Missing front or back image data."
       });
     }
 
@@ -164,11 +165,11 @@ export default async function handler(req, res) {
     const back = parseDataUrl(backImage);
 
     const systemInstruction = `
-You are a deterministic trading card pre-screening engine and optical analysis system. 
+You are a deterministic trading card pre-screening engine and optical analysis system.
 
 Mandatory Analysis Protocol:
-1. Virtual Filter Simulation: Mentally apply high-contrast, edge-enhancement, and color-channel separation filters to the image pixels to aggressively expose surface micro-scratches, foil swirls, print lines, dents, and back/front edge whitening (chipping). 
-2. Exact Centering Measurement: You must calculate and provide precise estimated border measurements in millimeters (mm) for top, bottom, left, and right borders on both the front and back, alongside the corresponding ratio (e.g., "Left: 2.5mm / Right: 1.5mm (62/38)").
+1. Virtual Filter Simulation: Mentally apply high-contrast, edge-enhancement, and color-channel separation filters to the image pixels to aggressively expose surface micro-scratches, foil swirls, print lines, dents, and back/front edge whitening (chipping).
+2. Exact Centering Measurement: Calculate and provide precise estimated border measurements in millimeters (mm) for top, bottom, left, and right borders on both front and back, alongside the corresponding ratio (e.g., "Left: 2.5mm / Right: 1.5mm (62/38)").
 3. Strict Consistency Rules: Identical images must return identical structural JSON output. If edge whitening or a surface hairline scratch is detected via the filtered analysis, cap the appropriate grades instantly based on strict industry standards.
 
 Return ONLY valid JSON matching this exact structure:

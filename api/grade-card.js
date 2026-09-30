@@ -33,7 +33,7 @@ async function generateWithRetry(
         `Gemini temporarily unavailable. Retrying in ${delay}ms...`
       );
 
-      await new Promise(resolve =>
+      await new Promise((resolve) =>
         setTimeout(resolve, delay)
       );
 
@@ -103,6 +103,11 @@ export default async function handler(req, res) {
       backMimeType = "image/jpeg"
     } = req.body || {};
 
+
+    /* --------------------------------------------------------
+       VALIDATE IMAGES
+    -------------------------------------------------------- */
+
     if (!frontBase64 || !backBase64) {
       return res.status(400).json({
         error:
@@ -111,9 +116,9 @@ export default async function handler(req, res) {
     }
 
 
-    /* ========================================================
-       GEMINI CARD ANALYSIS
-    ======================================================== */
+    /* --------------------------------------------------------
+       ANALYSE CARD
+    -------------------------------------------------------- */
 
     const analysis =
       await analyseCardWithGemini({
@@ -124,58 +129,19 @@ export default async function handler(req, res) {
       });
 
 
-    /* ========================================================
-       PULSETCG PRICE LOOKUP
-    ======================================================== */
+    /* --------------------------------------------------------
+       CREATE SIMPLE SERVICE RECOMMENDATION
+    -------------------------------------------------------- */
 
-    const pulsePrices =
-      await getPulseTCGPrices(
-        analysis.cardIdentification,
+    const recommendation =
+      createRecommendation(
         analysis.companyPredictions
       );
 
 
-    /* ========================================================
-       VALUE COMPARISON
-    ======================================================== */
-
-    const gradingEconomics =
-      calculateGradingEconomics({
-        predictions:
-          analysis.companyPredictions,
-
-        pulsePrices
-      });
-
-
-    /* ========================================================
-       FINAL RECOMMENDATION
-    ======================================================== */
-
-    const recommendation =
-      await createValueRecommendation({
-
-        card:
-          analysis.cardIdentification,
-
-        predictions:
-          analysis.companyPredictions,
-
-        diagnostics:
-          analysis.subgrades,
-
-        gradeSummary:
-          analysis.gradeSummary,
-
-        pulsePrices,
-
-        gradingEconomics
-      });
-
-
-    /* ========================================================
-       RETURN EVERYTHING TO FRONTEND
-    ======================================================== */
+    /* --------------------------------------------------------
+       RETURN RESPONSE
+    -------------------------------------------------------- */
 
     return res.status(200).json({
 
@@ -191,10 +157,6 @@ export default async function handler(req, res) {
       gradeSummary:
         analysis.gradeSummary,
 
-      pulsePrices,
-
-      gradingEconomics,
-
       recommendation
 
     });
@@ -209,7 +171,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error:
         err?.message ||
-        "Internal server error processing card."
+        "Internal server error processing images with Gemini."
     });
   }
 }
@@ -228,19 +190,26 @@ async function analyseCardWithGemini({
 
   const gradingSystemInstruction = `
 
-You are an expert trading card identification,
-condition analysis and grading pre-screening AI.
+You are an expert trading card identification and grading
+pre-screening AI.
 
 You are analysing two photographs:
 
 IMAGE 1 = FRONT OF CARD
 IMAGE 2 = BACK OF CARD
 
+Your job is to identify the card and provide a careful,
+realistic estimated condition assessment for PSA, BGS and ACE.
+
 IMPORTANT:
 
-This is an estimated pre-screening result.
+This is an AI pre-screening estimate.
 
-You are NOT an official PSA, BGS or ACE grader.
+You are NOT an official PSA grader.
+
+You are NOT an official BGS grader.
+
+You are NOT an official ACE grader.
 
 Never claim that your result is an official grade.
 
@@ -251,17 +220,19 @@ ultraviolet, blue-light equipment, microscopes,
 or physical measuring equipment.
 
 Only report defects that can reasonably be inferred
-from the supplied photographs.
+from the photographs.
 
-If something cannot be reliably seen, say so.
+If a defect cannot be reliably seen, say so.
 
 DO NOT INVENT CARD INFORMATION.
 
-DO NOT INVENT MARKET PRICES.
+DO NOT INVENT DEFECTS.
+
+DO NOT INVENT MEASUREMENTS.
 
 
 ============================================================
-CARD IDENTIFICATION
+1. CARD IDENTIFICATION
 ============================================================
 
 Identify the card using both photographs.
@@ -278,7 +249,7 @@ Return:
 Pay particular attention to:
 
 - card number
-- set symbols
+- set symbol
 - expansion markings
 - promo markings
 - artwork
@@ -289,43 +260,48 @@ Pay particular attention to:
 - variant markings
 
 
+If you are uncertain about an identification,
+use the most likely identification and reduce the
+identification confidence.
+
+
 ============================================================
-CENTERING
+2. CENTERING
 ============================================================
 
-Estimate:
+Estimate the visible centering from the photographs.
 
-FRONT:
+For the FRONT provide:
 
 - left/right centering
 - top/bottom centering
-- approximate overall ratio
+- approximate ratio
 
-BACK:
+For the BACK provide:
 
 - left/right centering
 - top/bottom centering
-- approximate overall ratio
+- approximate ratio
 
-Do NOT claim exact millimetre measurements.
+Do NOT claim exact physical millimetre measurements.
 
 Photographs do not provide reliable physical millimetre
 measurements without a known reference scale.
 
-Use language such as:
+Use approximate descriptions such as:
 
 "Approximately 55/45 left-right and 50/50 top-bottom."
 
-If it cannot be reliably measured:
+If centering cannot be reliably determined:
 
-"Not reliably measurable from supplied image."
+"Unable to reliably determine from supplied image."
 
 
 ============================================================
-CORNERS
+3. CORNERS
 ============================================================
 
-Look for visible:
+Look carefully for visible:
 
 - whitening
 - rounding
@@ -337,10 +313,10 @@ Look for visible:
 
 
 ============================================================
-EDGES
+4. EDGES
 ============================================================
 
-Look for visible:
+Look carefully for visible:
 
 - whitening
 - chipping
@@ -352,10 +328,10 @@ Look for visible:
 
 
 ============================================================
-SURFACE
+5. SURFACE
 ============================================================
 
-Look for visible:
+Look carefully for visible:
 
 - scratches
 - print lines
@@ -364,16 +340,17 @@ Look for visible:
 - holo scratches
 - texture defects
 - stains
-- printing defects
+- print defects
+- roller lines
+- surface marks
 
 
 ============================================================
-PSA
+6. PSA ESTIMATE
 ============================================================
 
-Estimate the most likely PSA grade.
-
-Explain the reasoning.
+Estimate the most likely PSA grade based on the supplied
+photographs.
 
 Consider:
 
@@ -382,66 +359,103 @@ Consider:
 - edges
 - surface
 - visible print quality
+- overall condition
+
+Give a concise explanation.
 
 
 ============================================================
-BGS
+7. BGS ESTIMATE
 ============================================================
 
-Estimate BGS subgrades:
+Estimate:
 
 - Centering
 - Corners
 - Edges
 - Surface
 
-Then estimate the overall BGS grade.
+Then estimate the likely overall BGS grade.
 
-Explain the reasoning.
+The BGS grade should be consistent with the estimated
+subgrades.
 
-
-============================================================
-ACE
-============================================================
-
-Estimate the likely ACE grade.
-
-Explain the reasoning.
+Give a concise explanation.
 
 
 ============================================================
-GRADE SUMMARY
+8. ACE ESTIMATE
 ============================================================
 
-Write a useful summary explaining:
+Estimate the likely ACE grade based on:
+
+- centering
+- corners
+- edges
+- surface
+- overall visible condition
+
+Give a concise explanation.
+
+
+============================================================
+9. GRADE SUMMARY
+============================================================
+
+Write a useful overall summary.
+
+Mention:
 
 - strongest aspects of the card
 - weakest aspects
 - biggest grading risk
-- overall apparent condition
-- limitations caused by photographs
+- apparent overall condition
+- limitations caused by the photographs
 
 
 ============================================================
-CONFIDENCE
+10. CONFIDENCE
 ============================================================
 
-Provide confidence levels:
-
-High
-Medium
-Low
-
-for:
+Provide confidence for:
 
 - card identification
-- condition
-- centering
-- overall grade
+- condition assessment
+- centering assessment
+- PSA grade
+- BGS grade
+- ACE grade
+
+Use:
+
+"High"
+
+"Medium"
+
+"Low"
 
 
 ============================================================
-JSON
+11. IMPORTANT IMAGE LIMITATIONS
+============================================================
+
+Do not pretend that photographs can reveal defects
+that are impossible to see.
+
+For example, do not claim to detect hidden dents,
+creases or scratches if they are not visible.
+
+Do not claim exact millimetre measurements.
+
+Do not claim infrared or blue-light analysis was
+actually performed.
+
+If image quality limits the assessment, explicitly
+mention this in the reasoning or summary.
+
+
+============================================================
+12. OUTPUT
 ============================================================
 
 Return VALID JSON ONLY.
@@ -506,6 +520,10 @@ Use EXACTLY this structure:
 
 `;
 
+
+  /* ==========================================================
+     GEMINI REQUEST
+  ========================================================== */
 
   const response =
     await generateWithRetry({
@@ -577,6 +595,10 @@ Use EXACTLY this structure:
     });
 
 
+  /* ==========================================================
+     PARSE GEMINI RESPONSE
+  ========================================================== */
+
   const responseText =
     response.text;
 
@@ -608,601 +630,263 @@ Use EXACTLY this structure:
 
 
 /* ============================================================
-   PULSETCG PRICE LOOKUP
+   GRADING SERVICE RECOMMENDATION
 ============================================================ */
 
 /*
-   IMPORTANT:
+  For now there is NO pricing involved.
 
-   This function is ready for a real PulseTCG API.
+  The recommendation is based on the highest predicted grade.
 
-   DO NOT put a made-up PulseTCG URL here.
+  Example:
 
-   Once you have the actual PulseTCG API endpoint,
-   add it in Vercel Environment Variables as:
+  PSA 10
+  BGS 9.5
+  ACE 10
 
-   PULSE_API_URL
+  PSA and ACE are tied on numerical grade.
 
-   And, if required:
+  In a tie, we use the order PSA → BGS → ACE so the result
+  is deterministic.
 
-   PULSE_API_KEY
+  Later, when eBay pricing is added, this function can be
+  replaced with the highest recent sold value.
 */
 
-async function getPulseTCGPrices(
-  card,
+function createRecommendation(
   predictions
 ) {
 
-  const retrievedAt =
-    new Date().toISOString();
-
-
-  /* ----------------------------------------------------------
-     NO API CONFIGURED
-  ---------------------------------------------------------- */
-
-  if (!process.env.PULSE_API_URL) {
+  if (!predictions) {
 
     return {
 
-      live: false,
+      service:
+        "Unable to recommend",
 
-      source:
-        "PulseTCG",
+      predictedGrade:
+        "",
 
-      retrievedAt,
+      verdict:
+        "Unable to recommend",
 
-      status:
-        "PulseTCG API not configured",
-
-      PSA: {
-
-        grade:
-          predictions?.PSA?.predictedGrade ||
-          null,
-
-        price:
-          null,
-
-        currency:
-          "GBP"
-
-      },
-
-      BGS: {
-
-        grade:
-          predictions?.BGS?.predictedGrade ||
-          null,
-
-        price:
-          null,
-
-        currency:
-          "GBP"
-
-      },
-
-      ACE: {
-
-        grade:
-          predictions?.ACE?.predictedGrade ||
-          null,
-
-        price:
-          null,
-
-        currency:
-          "GBP"
-
-      }
+      reason:
+        "No grading predictions were returned."
 
     };
   }
 
 
-  /* ----------------------------------------------------------
-     SEARCH PARAMETERS
-  ---------------------------------------------------------- */
-
-  const params =
-    new URLSearchParams({
-
-      name:
-        card?.cardName || "",
-
-      set:
-        card?.setName || "",
-
-      number:
-        card?.cardNumber || "",
-
-      rarity:
-        card?.rarity || "",
-
-      language:
-        card?.language || "",
-
-      variant:
-        card?.variant || ""
-
-    });
-
-
-  const headers = {
-    "Accept":
-      "application/json"
-  };
-
-
-  if (process.env.PULSE_API_KEY) {
-
-    headers.Authorization =
-      `Bearer ${process.env.PULSE_API_KEY}`;
-
-  }
-
-
-  /* ----------------------------------------------------------
-     CALL PULSETCG
-  ---------------------------------------------------------- */
-
-  const response =
-    await fetch(
-
-      `${process.env.PULSE_API_URL}?${params.toString()}`,
-
-      {
-        method:
-          "GET",
-
-        headers
-
-      }
-
-    );
-
-
-  if (!response.ok) {
-
-    throw new Error(
-      `PulseTCG request failed: HTTP ${response.status}`
-    );
-  }
-
-
-  const data =
-    await response.json();
-
-
-  return {
-
-    live:
-      true,
-
-    source:
-      "PulseTCG",
-
-    retrievedAt,
-
-    status:
-      "Live",
-
-    PSA:
-      extractGradedPrice(
-        data,
-        "PSA",
-        predictions?.PSA?.predictedGrade
-      ),
-
-    BGS:
-      extractGradedPrice(
-        data,
-        "BGS",
-        predictions?.BGS?.predictedGrade
-      ),
-
-    ACE:
-      extractGradedPrice(
-        data,
-        "ACE",
-        predictions?.ACE?.predictedGrade
-      )
-
-  };
-}
-
-
-/* ============================================================
-   NORMALISE PULSETCG RESPONSE
-============================================================ */
-
-function extractGradedPrice(
-  data,
-  company,
-  predictedGrade
-) {
-
-  const companyData =
-    data?.[company] ||
-    data?.[company.toLowerCase()] ||
-    {};
-
-
-  let price =
-    companyData?.price ??
-    companyData?.marketPrice ??
-    companyData?.value ??
-    null;
-
-
-  let grade =
-    companyData?.grade ??
-    predictedGrade ??
-    null;
-
-
-  /* ----------------------------------------------------------
-     IF API RETURNS A GRADES OBJECT
-  ---------------------------------------------------------- */
-
-  if (
-    price === null &&
-    companyData?.grades
-  ) {
-
-    const possibleKeys = [
-
-      predictedGrade,
-
-      String(predictedGrade || "")
-        .replace(
-          company,
-          ""
-        )
-        .trim(),
-
-      `${company} ${predictedGrade}`
-
-    ];
-
-
-    for (
-      const key of possibleKeys
-    ) {
-
-      if (
-        companyData.grades[key] !==
-        undefined
-      ) {
-
-        price =
-          companyData.grades[key];
-
-        break;
-      }
-    }
-  }
-
-
-  if (
-    price !== null &&
-    Number.isNaN(
-      Number(price)
-    )
-  ) {
-
-    price = null;
-  }
-
-
-  return {
-
-    grade,
-
-    price:
-      price === null
-        ? null
-        : Number(price),
-
-    currency:
-      companyData?.currency ||
-      "GBP"
-
-  };
-}
-
-
-/* ============================================================
-   GRADING VALUE COMPARISON
-============================================================ */
-
-function calculateGradingEconomics({
-  predictions,
-  pulsePrices
-}) {
-
   const services = [
 
     {
-
-      service:
+      name:
         "PSA",
 
       grade:
-        predictions?.PSA?.predictedGrade,
+        extractNumericGrade(
+          predictions.PSA?.predictedGrade
+        ),
 
-      price:
-        pulsePrices?.PSA?.price
+      gradeText:
+        predictions.PSA?.predictedGrade ||
+        "",
+
+      confidence:
+        predictions.PSA?.confidence ||
+        "Low"
 
     },
 
     {
-
-      service:
+      name:
         "BGS",
 
       grade:
-        predictions?.BGS?.predictedGrade,
+        extractNumericGrade(
+          predictions.BGS?.predictedGrade
+        ),
 
-      price:
-        pulsePrices?.BGS?.price
+      gradeText:
+        predictions.BGS?.predictedGrade ||
+        "",
+
+      confidence:
+        predictions.BGS?.confidence ||
+        "Low"
 
     },
 
     {
-
-      service:
+      name:
         "ACE",
 
       grade:
-        predictions?.ACE?.predictedGrade,
+        extractNumericGrade(
+          predictions.ACE?.predictedGrade
+        ),
 
-      price:
-        pulsePrices?.ACE?.price
+      gradeText:
+        predictions.ACE?.predictedGrade ||
+        "",
+
+      confidence:
+        predictions.ACE?.confidence ||
+        "Low"
 
     }
 
   ];
 
 
-  const available =
+  const validServices =
     services.filter(
-      item =>
-        typeof item.price ===
-        "number"
+      service =>
+        typeof service.grade ===
+        "number" &&
+        !Number.isNaN(service.grade)
     );
 
 
-  if (!available.length) {
+  if (!validServices.length) {
 
     return {
 
-      available:
-        false,
+      service:
+        "Unable to recommend",
 
-      message:
-        "No live PulseTCG graded prices are available."
+      predictedGrade:
+        "",
+
+      verdict:
+        "Unable to recommend",
+
+      reason:
+        "The AI did not return usable grading predictions."
 
     };
   }
 
 
-  const highest =
-    available.reduce(
-      (a, b) =>
-        b.price > a.price
-          ? b
-          : a
+  /* ----------------------------------------------------------
+     HIGHEST NUMERICAL PREDICTED GRADE
+  ---------------------------------------------------------- */
+
+  const highestGrade =
+    Math.max(
+      ...validServices.map(
+        service => service.grade
+      )
     );
+
+
+  const winners =
+    validServices.filter(
+      service =>
+        service.grade ===
+        highestGrade
+    );
+
+
+  /*
+     If multiple services have the same numerical grade,
+     choose the first in PSA → BGS → ACE order.
+
+     This keeps the result deterministic until pricing
+     is introduced.
+  */
+
+  const selected =
+    winners[0];
+
+
+  let reason =
+    `${selected.name} has the highest predicted grade at ${selected.gradeText}.`;
+
+
+  if (winners.length > 1) {
+
+    reason =
+      `${winners.map(
+        service => service.name
+      ).join(" and ")} are tied at the highest predicted grade of ${highestGrade}. ${selected.name} is shown as the recommendation for now.`;
+  }
 
 
   return {
 
-    available:
-      true,
+    service:
+      selected.name,
 
-    highestPotentialValue:
-      highest.price,
+    predictedGrade:
+      selected.gradeText,
 
-    highestPotentialService:
-      highest.service,
+    verdict:
+      "Highest Predicted Grade",
 
-    comparisons:
-      available
+    reason,
+
+    confidence:
+      selected.confidence
 
   };
 }
 
 
 /* ============================================================
-   FINAL GRADING SERVICE RECOMMENDATION
+   EXTRACT NUMERICAL GRADE
 ============================================================ */
 
-async function createValueRecommendation({
+function extractNumericGrade(
+  gradeText
+) {
 
-  card,
-  predictions,
-  diagnostics,
-  gradeSummary,
-  pulsePrices,
-  gradingEconomics
+  if (
+    !gradeText ||
+    typeof gradeText !==
+      "string"
+  ) {
 
-}) {
-
-  const prompt = `
-
-You are the final value-analysis layer for a trading-card
-grading pre-screening application.
-
-Your job is to compare PSA, BGS and ACE based ONLY on the
-information supplied below.
-
-DO NOT invent prices.
-
-DO NOT invent grading fees.
-
-DO NOT invent shipping costs.
-
-DO NOT invent raw card values.
-
-DO NOT invent profit.
-
-If grading costs are unavailable, explicitly state that the
-comparison is based on potential slab value and does not
-represent net profit.
-
-============================================================
-CARD
-============================================================
-
-${JSON.stringify(
-  card,
-  null,
-  2
-)}
-
-============================================================
-GRADE PREDICTIONS
-============================================================
-
-${JSON.stringify(
-  predictions,
-  null,
-  2
-)}
-
-============================================================
-VISUAL DIAGNOSTICS
-============================================================
-
-${JSON.stringify(
-  diagnostics,
-  null,
-  2
-)}
-
-============================================================
-GRADE SUMMARY
-============================================================
-
-${gradeSummary || ""}
-
-============================================================
-PULSETCG PRICE DATA
-============================================================
-
-${JSON.stringify(
-  pulsePrices,
-  null,
-  2
-)}
-
-============================================================
-VALUE COMPARISON
-============================================================
-
-${JSON.stringify(
-  gradingEconomics,
-  null,
-  2
-)}
-
-============================================================
-TASK
-============================================================
-
-Compare the three grading services.
-
-Take into account:
-
-1. Predicted grade.
-
-2. PulseTCG value for that predicted grade.
-
-3. Confidence in the prediction.
-
-4. Visible condition risks.
-
-5. Difference between potential slab values.
-
-6. Whether the predicted grade is sufficiently
-   supported by the photographs.
-
-7. Whether current price data actually exists.
-
-If there is no live PulseTCG price information,
-DO NOT pretend there is.
-
-If there is insufficient pricing information,
-return:
-
-"Insufficient Price Data"
-
-as the verdict.
-
-Otherwise return one of:
-
-"Worth Sending"
-
-"Borderline"
-
-"Not Worth Sending"
-
-Return:
-
-{
-  "service": "",
-  "predictedGrade": "",
-  "pulseValue": null,
-  "currency": "GBP",
-  "verdict": "",
-  "confidence": "",
-  "reason": ""
-}
-
-Return JSON ONLY.
-
-`;
-
-
-  const response =
-    await generateWithRetry({
-
-      model:
-        process.env.GEMINI_MODEL ||
-        "gemini-3.5-flash-lite",
-
-      contents:
-        prompt,
-
-      config: {
-
-        responseMimeType:
-          "application/json",
-
-        temperature:
-          0.1
-
-      }
-
-    });
-
-
-  const text =
-    response.text;
-
-
-  try {
-
-    return JSON.parse(
-      text
-    );
-
-  } catch {
-
-    throw new Error(
-      "Gemini returned invalid recommendation JSON."
-    );
+    return null;
   }
+
+
+  /*
+    Examples:
+
+    "PSA 10"    → 10
+    "BGS 9.5"   → 9.5
+    "ACE 10"    → 10
+    "9.5"       → 9.5
+  */
+
+  const match =
+    gradeText.match(
+      /(\d+(?:\.\d+)?)/g
+    );
+
+
+  if (!match?.length) {
+    return null;
+  }
+
+
+  const numbers =
+    match
+      .map(Number)
+      .filter(
+        number =>
+          number >= 1 &&
+          number <= 10
+      );
+
+
+  if (!numbers.length) {
+    return null;
+  }
+
+
+  return numbers[
+    numbers.length - 1
+  ];
 }

@@ -41,33 +41,40 @@ export default async function handler(req, res) {
     }
 
     const gradingSystemInstruction = `
-You are an elite, hyper-precise trading card authentication and grading AI equipped with advanced computer-vision simulation capabilities, including optical millimeter border measurement, simulated infrared (IR) surface scattering, and blue-light spectrum filtering.
+You are an elite, hyper-precise trading card authentication, grading, and UK market pricing AI (integrated with PulseTCG data standards) equipped with advanced computer-vision simulation capabilities, including optical millimeter border measurement, simulated infrared (IR) surface scattering, and blue-light spectrum filtering.
 
 Analyze the front and back images with absolute forensic precision and return valid JSON only.
 
-1. EXACT MILLIMETER CENTERING MEASUREMENT (100% Precision):
-- Mathematically measure the exact border widths in millimeters (or fractional ratios) for Top, Bottom, Left, and Right on both the front and back.
-- Format example: "Left 2.0mm / Right 2.5mm - 55/45".
+1. CARD IDENTIFICATION:
+- Identify the card name, expansion set, and card number/rarity from the visual artwork and layout.
 
-2. SIMULATED INFRARED & BLUE-LIGHT SURFACE/EDGE/CORNER ANALYSIS:
-- Simulate Infrared (IR) filtering across the card surface to detect heat signatures of micro-creases, subsurface indentations, pressure dents, and foil warping.
-- Simulate Blue-Light spectrum filtering to isolate surface gloss integrity, hairline scratches, print lines, roller marks, and microscopic corner fraying or edge whitening.
+2. EXACT MILLIMETER CENTERING MEASUREMENT (100% Precision):
+- Mathematically measure exact border widths in millimeters or ratios for Top, Bottom, Left, and Right (e.g., "Left 2.0mm / Right 2.5mm - 55/45").
 
-3. COMPANY-SPECIFIC GRADING STANDARDS:
-- BECKETT (BGS): Extremely strict and rigid. Enforces strict subgrade mathematical limits. Zero tolerance for flaws found via IR/blue-light inspection.
-- PSA: Accurate, slightly more forgiving on minor back-surface or centering variances if the front presentation is pristine.
-- ACE GRADING: Collector-friendly, slightly more lenient on minor factory quirks while rewarding clean eye appeal.
+3. SIMULATED INFRARED & BLUE-LIGHT SURFACE/EDGE/CORNER ANALYSIS:
+- Simulate Infrared (IR) filtering for subsurface indentations/creases.
+- Simulate Blue-Light spectrum filtering for hairline scratches, print lines, and corner fraying.
 
-4. SUBMISSION RECOMMENDATION & WORTH-SENDING SUMMARY:
-- Evaluate whether the card is worth sending to a professional grading company based on projected grade return vs. grading/shipping overhead.
-- Give a direct verdict ("Worth Sending", "Borderline", or "Not Worth Sending") and a 1-2 sentence executive summary.
+4. COMPANY-SPECIFIC GRADING STANDARDS & PULSETCG UK VALUES:
+- BECKETT (BGS): Extremely strict. Enforces strict subgrade mathematical limits. Provide estimated PulseTCG UK market value in GBP (£) for the predicted BGS grade.
+- PSA: Accurate, slightly more forgiving on minor back-surface variance. Provide estimated PulseTCG UK market value in GBP (£) for the predicted PSA grade.
+- ACE GRADING: Collector-friendly, UK-based standard. Provide estimated PulseTCG UK market value in GBP (£) for the predicted ACE grade.
 
-Provide a detailed condition analysis and grade estimations matching this exact JSON structure:
+5. SUBMISSION RECOMMENDATION:
+- Give a verdict ("Worth Sending", "Borderline", or "Not Worth Sending") comparing potential slab value increase against grading and shipping costs.
+
+Provide a detailed condition analysis matching this exact JSON structure:
 {
+  "cardIdentification": {
+    "cardName": "...",
+    "setName": "...",
+    "cardNumber": "..."
+  },
   "companyPredictions": {
     "PSA": {
       "predictedGrade": "PSA 9",
-      "reasoning": "..."
+      "reasoning": "...",
+      "pulseTcgUkValue": "£00.00"
     },
     "BGS": {
       "predictedGrade": "9.5",
@@ -77,11 +84,13 @@ Provide a detailed condition analysis and grade estimations matching this exact 
         "edges": "9.0",
         "surface": "10"
       },
-      "reasoning": "..."
+      "reasoning": "...",
+      "pulseTcgUkValue": "£00.00"
     },
     "ACE": {
       "predictedGrade": "ACE 9",
-      "reasoning": "..."
+      "reasoning": "...",
+      "pulseTcgUkValue": "£00.00"
     }
   },
   "subgrades": {
@@ -94,7 +103,7 @@ Provide a detailed condition analysis and grade estimations matching this exact 
     "worthGrading": true,
     "recommendedCompany": "PSA",
     "verdict": "Worth Sending",
-    "summary": "Strong front presentation and solid centering outweigh minor back corner whitening, making this a prime candidate for a PSA 9/10 submission."
+    "summary": "..."
   }
 }
 `;
@@ -105,7 +114,7 @@ Provide a detailed condition analysis and grade estimations matching this exact 
         {
           role: "user",
           parts: [
-            { text: "Analyze these front and back trading card images and provide the precise forensic grade report in JSON format." },
+            { text: "Analyze these front and back trading card images, identify the card, and provide the precise forensic grade report, PulseTCG UK values, and recommendation in JSON format." },
             {
               inlineData: {
                 data: frontBase64,

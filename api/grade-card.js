@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const config = {
   api: {
@@ -25,8 +25,10 @@ function parseDataUrl(dataUrl) {
     throw new Error("Invalid image format. Expected a base64 data URL.");
   }
   return {
-    mimeType: match[1],
-    data: match[2]
+    inlineData: {
+      mimeType: match[1],
+      data: match[2]
+    }
   };
 }
 
@@ -57,8 +59,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing front or back image data." });
     }
 
-    const front = parseDataUrl(frontImage);
-    const back = parseDataUrl(backImage);
+    const frontPart = parseDataUrl(frontImage);
+    const backPart = parseDataUrl(backImage);
 
     const systemInstruction = `
 You are an uncompromising, brutally strict professional trading card grading inspector. Your mandate is to protect collectors from ever getting a lower grade than predicted. When in doubt, you ALWAYS penalize heavily and grade down. 
@@ -140,28 +142,21 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: "Execute strict card grading inspection and output valid JSON." },
-            { inlineData: { mimeType: front.mimeType, data: front.data } },
-            { inlineData: { mimeType: back.mimeType, data: back.data } }
-          ]
-        }
-      ],
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        temperature: 0.0,
-        maxOutputTokens: 5000
-      }
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+      systemInstruction: systemInstruction,
     });
 
-    let text = response.text ? response.text.trim() : "";
+    const result = await model.generateContent([
+      "Execute strict card grading inspection and output valid JSON.",
+      frontPart,
+      backPart
+    ]);
+
+    const response = await result.response;
+    let text = response.text();
+    
     if (!text) {
       throw new Error("Gemini returned an empty response.");
     }
@@ -172,8 +167,8 @@ Return ONLY valid JSON matching this exact structure:
       text = text.replace(/^```/, "").replace(/```$/, "").trim();
     }
 
-    const result = JSON.parse(text);
-    return res.status(200).json(result);
+    const jsonResult = JSON.parse(text);
+    return res.status(200).json(jsonResult);
 
   } catch (error) {
     console.error("Full server grading error:", error);

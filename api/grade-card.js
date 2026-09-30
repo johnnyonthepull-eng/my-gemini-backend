@@ -36,17 +36,14 @@ export default async function handler(req, res) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are a master TCG authenticator and professional grading director for PSA, BGS, and ACE. 
-Carefully examine the provided front and back images of THIS specific trading card. Conduct a thorough condition and centering audit. Do not use placeholders or generic text. Every property must contain detailed, custom information specific to the uploaded card.
+    const promptText = `You are an elite, brutally strict master TCG authenticator and head grading director for PSA, BGS, and ACE. 
+Carefully examine the provided front and back images of THIS specific trading card. Apply professional industry-standard grading rigor without leniency. 
 
-MANDATORY RULES:
-1. Identify the exact card name, expansion set, card number, rarity, language, and finish variant visible in the images. Provide an identification confidence percentage (e.g. "99%").
-2. Provide realistic estimated numeric or tier grades for PSA, BGS, and ACE along with accompanying confidence percentages and detailed explanatory labels for why each grade was assigned.
-3. For BGS, provide specific subgrades formatted cleanly (e.g., "C: 9.5 | Cr: 8.5 | E: 9.0 | S: 8.0").
-4. Provide a professional grading recommendation (e.g. "PSA", "BGS", or "Keep Raw") with a custom rationale label.
-5. Provide a comprehensive condition summary paragraph detailing eye appeal and why the card is locked out of or achieves higher tiers.
-6. For visual diagnostics, estimate physical border widths in millimeters (mm) to one decimal place (e.g., "1.9 mm") for top, bottom, left, and right on both front and back, alongside centering ratios (e.g., "55/45").
-7. Provide extensive, professional text descriptions for corner flaws, edge flaws, and surface flaws observed on the card. Never use dashes ("—") or blank spaces.
+STRICT GRADING RULES & PENALTIES:
+1. GEM MINT 10 REQUIREMENT: A Gem Mint 10 requires flawless sub-grades (centering 50/50 to 55/45, pristine uncompromised corners, zero edge silvering, and absolute zero surface flaws or print lines). Any flaw automatically locks the card out of a 10.
+2. SURFACE & PRINT LINE PENALTIES: Even a single faint print line, minor scratch, or texture disruption on the foil/holo layer immediately caps PSA/ACE at a maximum grade of 8 or 9, and pulls BGS Surface subgrade down to 8.0 or 8.5.
+3. CORNER & EDGE PENALTIES: Any micro-whitening, chipping, or corner softness on the back or front forces a strict grade reduction. Edge silvering or rough factory cuts must result in lower edge subgrades.
+4. DETAILED JUSTIFICATIONS: You must write extensive, thorough explanations for EVERY grade label, detailing exact micro-flaws observed and explaining precisely why the card achieved or failed to achieve higher tiers.
 
 Return ONLY a valid JSON object matching this exact key structure:
 {
@@ -58,14 +55,14 @@ Return ONLY a valid JSON object matching this exact key structure:
   "variant": "Finish variant description",
   "confidence": "99%",
   "psaGrade": "8",
-  "psaLabel": "Detailed explanation for PSA grade based on wear",
+  "psaLabel": "Exhaustive breakdown explaining why it is capped at this grade, detailing specific surface and corner limitations.",
   "bgsGrade": "8.5",
   "bgsSubgrades": "C: 9.5 | Cr: 8.5 | E: 9.0 | S: 8.0",
   "aceGrade": "8",
-  "aceLabel": "Detailed explanation for ACE grade",
+  "aceLabel": "Strict breakdown detailing why modern factory/wear defects restricted this card from Gem Mint status.",
   "recGrade": "PSA",
-  "recLabel": "Specific recommendation rationale for this card",
-  "conditionSummary": "Detailed custom paragraph summarizing this specific card's overall condition and eye appeal.",
+  "recLabel": "Comprehensive strategic rationale advising whether to grade or keep raw based on current market liquidity vs. condition penalties.",
+  "conditionSummary": "A comprehensive, highly detailed professional paragraph evaluating the card's overall eye appeal, structural integrity, and exact reasonings why higher tier grades are unreachable.",
   "frontTop": "1.9 mm",
   "frontBottom": "2.1 mm",
   "frontLeft": "2.2 mm",
@@ -76,9 +73,9 @@ Return ONLY a valid JSON object matching this exact key structure:
   "backLeft": "2.0 mm",
   "backRight": "2.4 mm",
   "backRatio": "45/55",
-  "cornerFlaws": "Detailed description of corner wear, whitening, or chipping across all 4 corners.",
-  "edgeFlaws": "Detailed description of edge wear, silvering, or rough cuts on front and back.",
-  "surfaceFlaws": "Detailed description of surface gloss, print lines, scratches, or texture disruptions."
+  "cornerFlaws": "Exhaustive description of corner wear, micro-whitening, or fiber softness across all 4 corners.",
+  "edgeFlaws": "Exhaustive description of edge silvering, rough cuts, or chipping on front and back boundaries.",
+  "surfaceFlaws": "Exhaustive description of surface gloss integrity, print lines, hairline scratches, or foil disruptions."
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {

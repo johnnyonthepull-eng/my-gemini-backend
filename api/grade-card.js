@@ -102,8 +102,8 @@ Return a valid JSON object ONLY, with no extra markdown formatting or backticks,
   }
 }`;
 
-    // Model fallback sequence
-    const modelsToTry = ["gemini-3.8-flash", "gemini-2.5-flash"];
+    // Updated active model fallback sequence
+    const modelsToTry = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
     let responseText = null;
     let lastError = null;
 

@@ -4,77 +4,102 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-export default async function handler(req, res) {
-  // =====================================================
-  // CORS
-  // =====================================================
+const MODEL = "gemini-3.8-flash";
 
-  res.setHeader(
-    "Access-Control-Allow-Origin",
-    "*"
-  );
+export const config = {
+  runtime: "edge",
+};
 
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "POST, OPTIONS"
-  );
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Content-Type": "application/json",
+  };
+}
 
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type"
-  );
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: corsHeaders(),
+  });
+}
 
-  // Handle browser CORS preflight
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+function parseImage(dataUrl) {
+  if (!dataUrl) {
+    throw new Error("Image data is missing.");
   }
 
-  // =====================================================
-  // METHOD CHECK
-  // =====================================================
+  // Accept either a complete data URL or raw base64.
+  if (dataUrl.startsWith("data:")) {
+    const match = dataUrl.match(
+      /^data:([^;]+);base64,(.+)$/
+    );
 
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method not allowed",
-      message: "Use POST to analyze a card."
+    if (!match) {
+      throw new Error("Invalid image data URL.");
+    }
+
+    return {
+      mimeType: match[1],
+      data: match[2],
+    };
+  }
+
+  return {
+    mimeType: "image/jpeg",
+    data: dataUrl,
+  };
+}
+
+export default async function handler(req) {
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders(),
     });
   }
 
+  if (req.method !== "POST") {
+    return jsonResponse(
+      {
+        error: "Method not allowed. Use POST.",
+      },
+      405
+    );
+  }
+
   try {
-    // ===================================================
-    // READ REQUEST
-    // ===================================================
-
-    const body = req.body || {};
-
-    const frontBase64 = body.frontBase64;
-    const backBase64 = body.backBase64;
-
-    if (!frontBase64 || !backBase64) {
-      return res.status(400).json({
-        error: "Missing front or back image."
-      });
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error(
+        "GEMINI_API_KEY is not configured in Vercel."
+      );
     }
 
-    console.log(
-      "Front image received:",
-      Math.round(frontBase64.length / 1024),
-      "KB"
-    );
+    const body = await req.json();
 
-    console.log(
-      "Back image received:",
-      Math.round(backBase64.length / 1024),
-      "KB"
-    );
+    const frontBase64 =
+      body.frontBase64 || body.frontImage;
 
-    // ===================================================
-    // SYSTEM INSTRUCTIONS
-    // ===================================================
+    const backBase64 =
+      body.backBase64 || body.backImage;
 
-    const gradingSystemInstruction = `
-You are an expert trading card identification and grading
-pre-screening assistant.
+    if (!frontBase64 || !backBase64) {
+      return jsonResponse(
+        {
+          error:
+            "Missing front or back image.",
+        },
+        400
+      );
+    }
+
+    const front = parseImage(frontBase64);
+    const back = parseImage(backBase64);
+
+    const systemInstruction = `
+You are an expert trading card condition pre-screening AI.
 
 You analyze photographs of trading cards and provide realistic
 pre-screening estimates for PSA, Beckett/BGS and ACE Grading.
@@ -82,366 +107,431 @@ pre-screening estimates for PSA, Beckett/BGS and ACE Grading.
 IMPORTANT LIMITATIONS:
 
 - You are analyzing photographs only.
-- Do not claim that you physically measured the card.
-- Do not claim to have used infrared equipment.
-- Do not claim to have used ultraviolet equipment.
-- Do not claim to have used blue-light equipment.
-- Do not claim to have detected defects that cannot reasonably
-  be seen in the supplied photographs.
-- Centering measurements are photographic estimates.
-- Surface analysis is limited by the quality, lighting and angle
-  of the photographs.
-- Official grading companies may produce different results.
-- Your predictions are estimates and are NOT official grades.
-- Never guarantee a grade.
+- Do NOT claim to perform infrared scanning.
+- Do NOT claim to perform blue-light scanning.
+- Do NOT claim to measure physical millimeters with 100% precision.
+- Do NOT claim that a grade is guaranteed.
+- Do NOT claim that you can detect hidden dents, indentations,
+  creases or microscopic defects that cannot actually be seen
+  in the supplied photographs.
+- Clearly distinguish visible evidence from uncertainty.
 
-=========================================================
-CARD IDENTIFICATION
-=========================================================
+Centering should be expressed as an ESTIMATED ratio based on
+visible borders.
 
-Identify the card as accurately as possible.
+Analyze both the front AND back carefully.
 
-Determine:
-
-- Card name
-- Expansion/set name
-- Card number
-- Rarity
-- Language
-- Variant
-
-If identification is uncertain, explicitly say so.
-
-Do not invent a card number or set if it cannot be determined.
-
-=========================================================
-CONDITION ANALYSIS
-=========================================================
-
-Analyze the visible condition of:
+Look for:
 
 1. Centering
 2. Corners
 3. Edges
 4. Surface
+5. Whitening
+6. Chipping
+7. Silvering
+8. Print lines
+9. Scratches
+10. Scuffs
+11. Visible dents
+12. Visible creases
+13. Visible alignment issues
+14. Cutting or print-quality issues
 
-Look for visible issues such as:
+For each grading company provide a realistic estimated grade.
 
-- Whitening
-- Edge chipping
-- Silvering
-- Corner wear
-- Corner whitening
-- Rough cuts
-- Scratches
-- Print lines
-- Surface marks
-- Dents
-- Creases
-- Indentations
-- Roller lines
-- Printing defects
-- Holo scratches
-- Scuffs
+PSA:
+Use the PSA-style 1-10 scale.
 
-Only report flaws that are reasonably visible.
-
-=========================================================
-CENTERING
-=========================================================
-
-Estimate front and back centering using ratios where possible.
-
-Examples:
-
-50/50
-55/45
-60/40
-
-Do not claim millimeter precision unless the photograph genuinely
-provides a reliable reference.
-
-=========================================================
-PSA
-=========================================================
-
-Estimate a likely PSA grade based on the visible condition.
-
-Use grades such as:
-
-PSA 10
-PSA 9
-PSA 8
-PSA 7
-etc.
-
-Explain the primary factors limiting the grade.
-
-=========================================================
-BGS
-=========================================================
-
-Estimate a likely Beckett/BGS grade.
-
-Provide estimated subgrades for:
-
+BGS:
+Use Beckett-style grades and provide:
 - Centering
 - Corners
 - Edges
 - Surface
 
-Use realistic half-point increments where appropriate.
+ACE:
+Provide an estimated ACE-style numerical grade.
 
-Examples:
+CARD IDENTIFICATION:
 
-10
-9.5
-9
-8.5
-8
+Identify, where possible:
+- Card name
+- Set
+- Card number
+- Rarity
+- Language
+- Variant
 
-Do not automatically give high subgrades simply because the image
-looks good.
+Do not invent card information.
 
-=========================================================
-ACE
-=========================================================
+If identification is uncertain, say so.
 
-Estimate a likely ACE grade based on the visible condition.
+RECOMMENDATION:
 
-=========================================================
-RECOMMENDATION
-=========================================================
+The recommendation must be based on the photographed condition
+and the estimated grades.
 
-Based ONLY on the predicted grades and observed condition, provide
-a grading-service recommendation.
+You may recommend PSA, BGS or ACE based on how the card appears
+to fit the estimated grading characteristics.
 
-Possible services:
+Do NOT claim the recommendation guarantees increased resale value.
 
-PSA
-BGS
-ACE
-
-The recommendation should explain why the service was selected.
-
-Do not claim that the recommendation guarantees a higher resale value.
-
-=========================================================
-OUTPUT
-=========================================================
-
-Return VALID JSON ONLY.
-
-Do not return Markdown.
-
-Do not wrap the JSON in triple backticks.
-
-Use this exact structure:
-
-{
-  "cardIdentification": {
-    "cardName": "",
-    "setName": "",
-    "cardNumber": "",
-    "rarity": "",
-    "language": "",
-    "variant": "",
-    "identificationConfidence": ""
-  },
-
-  "companyPredictions": {
-
-    "PSA": {
-      "predictedGrade": "",
-      "confidence": "",
-      "reasoning": ""
-    },
-
-    "BGS": {
-      "predictedGrade": "",
-      "confidence": "",
-      "estimatedSubgrades": {
-        "centering": "",
-        "corners": "",
-        "edges": "",
-        "surface": ""
-      },
-      "reasoning": ""
-    },
-
-    "ACE": {
-      "predictedGrade": "",
-      "confidence": "",
-      "reasoning": ""
-    }
-
-  },
-
-  "subgrades": {
-
-    "centeringFront": "",
-
-    "centeringBack": "",
-
-    "cornersFlaws": [],
-
-    "edgesFlaws": [],
-
-    "surfaceFlaws": []
-
-  },
-
-  "gradeSummary": "",
-
-  "recommendation": {
-
-    "service": "",
-
-    "estimatedGrade": "",
-
-    "verdict": "",
-
-    "reason": ""
-
-  }
-}
+Return ONLY valid JSON.
+No markdown.
+No code fences.
 `;
 
-    // ===================================================
-    // GEMINI REQUEST
-    // ===================================================
+    const userPrompt = `
+Analyze the following trading card.
+
+The first image is the FRONT.
+The second image is the BACK.
+
+Identify the card and provide the complete condition
+pre-screening report.
+
+Pay particular attention to:
+- front centering
+- back centering
+- corners
+- edges
+- surface
+- visible whitening
+- visible scratches
+- visible print lines
+- visible dents
+- visible creases
+- visible alignment issues
+
+Return the exact JSON structure requested.
+`;
 
     const response = await ai.models.generateContent({
-
-      model: "gemini-2.5-flash",
+      model: MODEL,
 
       contents: [
         {
           role: "user",
-
           parts: [
-
             {
-              text: `
-Analyze the following trading card.
-
-The first image is the FRONT of the card.
-
-The second image is the BACK of the card.
-
-Identify the card and provide the complete grading
-pre-screening report using the required JSON structure.
-`
+              text: userPrompt,
             },
 
             {
               inlineData: {
-                mimeType: "image/jpeg",
-                data: frontBase64
-              }
+                mimeType: front.mimeType,
+                data: front.data,
+              },
             },
 
             {
               inlineData: {
-                mimeType: "image/jpeg",
-                data: backBase64
-              }
-            }
-
-          ]
-        }
+                mimeType: back.mimeType,
+                data: back.data,
+              },
+            },
+          ],
+        },
       ],
 
       config: {
-
-        systemInstruction:
-          gradingSystemInstruction,
+        systemInstruction,
 
         responseMimeType:
           "application/json",
 
-        temperature:
-          0.1
+        thinkingConfig: {
+          thinkingLevel: "medium",
+        },
 
-      }
+        responseSchema: {
+          type: "object",
 
+          properties: {
+            cardIdentification: {
+              type: "object",
+
+              properties: {
+                cardName: {
+                  type: "string",
+                },
+
+                setName: {
+                  type: "string",
+                },
+
+                cardNumber: {
+                  type: "string",
+                },
+
+                rarity: {
+                  type: "string",
+                },
+
+                language: {
+                  type: "string",
+                },
+
+                variant: {
+                  type: "string",
+                },
+
+                identificationConfidence: {
+                  type: "string",
+                },
+              },
+
+              required: [
+                "cardName",
+                "setName",
+                "cardNumber",
+                "rarity",
+                "language",
+                "variant",
+                "identificationConfidence",
+              ],
+            },
+
+            companyPredictions: {
+              type: "object",
+
+              properties: {
+                PSA: {
+                  type: "object",
+
+                  properties: {
+                    predictedGrade: {
+                      type: "string",
+                    },
+
+                    confidence: {
+                      type: "string",
+                    },
+
+                    reasoning: {
+                      type: "string",
+                    },
+                  },
+
+                  required: [
+                    "predictedGrade",
+                    "confidence",
+                    "reasoning",
+                  ],
+                },
+
+                BGS: {
+                  type: "object",
+
+                  properties: {
+                    predictedGrade: {
+                      type: "string",
+                    },
+
+                    confidence: {
+                      type: "string",
+                    },
+
+                    estimatedSubgrades: {
+                      type: "object",
+
+                      properties: {
+                        centering: {
+                          type: "string",
+                        },
+
+                        corners: {
+                          type: "string",
+                        },
+
+                        edges: {
+                          type: "string",
+                        },
+
+                        surface: {
+                          type: "string",
+                        },
+                      },
+
+                      required: [
+                        "centering",
+                        "corners",
+                        "edges",
+                        "surface",
+                      ],
+                    },
+
+                    reasoning: {
+                      type: "string",
+                    },
+                  },
+
+                  required: [
+                    "predictedGrade",
+                    "confidence",
+                    "estimatedSubgrades",
+                    "reasoning",
+                  ],
+                },
+
+                ACE: {
+                  type: "object",
+
+                  properties: {
+                    predictedGrade: {
+                      type: "string",
+                    },
+
+                    confidence: {
+                      type: "string",
+                    },
+
+                    reasoning: {
+                      type: "string",
+                    },
+                  },
+
+                  required: [
+                    "predictedGrade",
+                    "confidence",
+                    "reasoning",
+                  ],
+                },
+              },
+
+              required: [
+                "PSA",
+                "BGS",
+                "ACE",
+              ],
+            },
+
+            subgrades: {
+              type: "object",
+
+              properties: {
+                centeringFront: {
+                  type: "string",
+                },
+
+                centeringBack: {
+                  type: "string",
+                },
+
+                cornersFlaws: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                },
+
+                edgesFlaws: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                },
+
+                surfaceFlaws: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                  },
+                },
+              },
+
+              required: [
+                "centeringFront",
+                "centeringBack",
+                "cornersFlaws",
+                "edgesFlaws",
+                "surfaceFlaws",
+              ],
+            },
+
+            gradeSummary: {
+              type: "string",
+            },
+
+            recommendation: {
+              type: "object",
+
+              properties: {
+                service: {
+                  type: "string",
+                },
+
+                verdict: {
+                  type: "string",
+                },
+
+                reason: {
+                  type: "string",
+                },
+              },
+
+              required: [
+                "service",
+                "verdict",
+                "reason",
+              ],
+            },
+          },
+
+          required: [
+            "cardIdentification",
+            "companyPredictions",
+            "subgrades",
+            "gradeSummary",
+            "recommendation",
+          ],
+        },
+      },
     });
 
-    // ===================================================
-    // READ GEMINI RESPONSE
-    // ===================================================
+    let text =
+      response.text || "";
 
-    const responseText =
-      response.text;
+    text = text.trim();
 
-    if (!responseText) {
-      throw new Error(
-        "Gemini returned an empty response."
-      );
+    // Remove accidental markdown fences if returned.
+    if (text.startsWith("```json")) {
+      text = text
+        .replace(/^```json\s*/, "")
+        .replace(/\s*```$/, "")
+        .trim();
     }
 
-    console.log(
-      "Gemini analysis completed."
-    );
-
-    // ===================================================
-    // CLEAN JSON
-    // ===================================================
-
-    let cleanJson =
-      responseText.trim();
-
-    if (
-      cleanJson.startsWith("```json")
-    ) {
-
-      cleanJson =
-        cleanJson
-          .replace(/^```json/, "")
-          .replace(/```$/, "")
-          .trim();
-
-    } else if (
-      cleanJson.startsWith("```")
-    ) {
-
-      cleanJson =
-        cleanJson
-          .replace(/^```/, "")
-          .replace(/```$/, "")
-          .trim();
-
+    if (text.startsWith("```")) {
+      text = text
+        .replace(/^```\s*/, "")
+        .replace(/\s*```$/, "")
+        .trim();
     }
 
-    // ===================================================
-    // PARSE RESULT
-    // ===================================================
+    const result =
+      JSON.parse(text);
 
-    const data =
-      JSON.parse(cleanJson);
-
-    // ===================================================
-    // RETURN RESULT
-    // ===================================================
-
-    return res.status(200).json(
-      data
+    return jsonResponse(
+      result,
+      200
     );
 
   } catch (error) {
 
     console.error(
-      "Vercel Card Grading Error:",
+      "CARD GRADING ERROR:",
       error
     );
 
-    return res.status(500).json({
-
-      error:
-        error?.message ||
-        "Internal server error during card analysis."
-
-    });
-
+    return jsonResponse(
+      {
+        error:
+          error?.message ||
+          "Gemini card analysis failed.",
+      },
+      500
+    );
   }
 }

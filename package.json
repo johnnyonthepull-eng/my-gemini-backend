@@ -1,8 +1,10 @@
 {
-  "name": "my-gemini-backend",
+  "name": "otptcg-gemini-card-grader",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "dependencies": {
-    "@google/genai": "^2.24.0"
+    "@google/genai": "^1.0.0",
+    "formidable": "^3.5.4"
   }
 }

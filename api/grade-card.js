@@ -142,37 +142,70 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
+    // Rotate through multiple active flash models to bypass single-model quota caps
+    const modelsToTry = ["gemini-3.8-flash", "gemini-3.5-flash"];
+    let response = null;
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      try {
+        console.log(`Trying model: ${model}`);
+        response = await ai.models.generateContent({
+          model,
+          contents: [
             {
-              text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-            },
-            {
-              inlineData: {
-                mimeType: front.mimeType,
-                data: front.data
-              }
-            },
-            {
-              inlineData: {
-                mimeType: back.mimeType,
-                data: back.data
-              }
+              role: "user",
+              parts: [
+                {
+                  text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
+                },
+                {
+                  inlineData: {
+                    mimeType: front.mimeType,
+                    data: front.data
+                  }
+                },
+                {
+                  inlineData: {
+                    mimeType: back.mimeType,
+                    data: back.data
+                  }
+                }
+              ]
             }
-          ]
+          ],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            temperature: 0.0,
+            maxOutputTokens: 5000
+          }
+        });
+
+        // If successful, break out of the loop
+        break;
+      } catch (err) {
+        lastError = err;
+        const errorMessage = err?.message || String(err);
+        console.warn(`Model ${model} failed:`, errorMessage);
+
+        // If quota exceeded (429), catch it and try the next model in the list
+        if (
+          errorMessage.includes("429") ||
+          errorMessage.includes("RESOURCE_EXHAUSTED") ||
+          errorMessage.includes("quota")
+        ) {
+          continue;
+        } else {
+          // If it's a different error, throw immediately
+          throw err;
         }
-      ],
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        temperature: 0.0,
-        maxOutputTokens: 5000
       }
-    });
+    }
+
+    if (!response) {
+      throw lastError || new Error("All available models have exhausted their free tier quotas.");
+    }
 
     let text = response.text;
     if (!text) {
@@ -191,6 +224,18 @@ Return ONLY valid JSON matching this exact structure:
 
   } catch (error) {
     console.error("Vercel grading error:", error);
-    return res.status(500).json({ error: error?.message || "Internal server error." });
+    const errMessage = error?.message || "Internal server error.";
+
+    if (
+      errMessage.includes("429") ||
+      errMessage.includes("RESOURCE_EXHAUSTED") ||
+      errMessage.includes("quota")
+    ) {
+      return res.status(429).json({
+        error: "Free tier request limits reached across all models. Please link billing in Google AI Studio to increase your limits."
+      });
+    }
+
+    return res.status(500).json({ error: errMessage });
   }
 }

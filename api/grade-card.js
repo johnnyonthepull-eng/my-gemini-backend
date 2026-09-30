@@ -1,4 +1,20 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Retry wrapper to ensure resilience against traffic spikes
+async function generateWithRetry(params, retries = 3, delay = 1000) {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (err) {
+    if (retries > 0 && (err.status === 503 || err.message?.includes('503') || err.message?.includes('overloaded'))) {
+      console.warn(`Model busy, retrying in \({delay}ms... (\){retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateWithRetry(params, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -10,8 +26,7 @@ export default async function handler(req, res) {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
@@ -19,13 +34,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { frontBase64, backBase64 } = req.body;
+    const { frontBase64, backBase64 } = req.body || {};
 
     if (!frontBase64 || !backBase64) {
-      return res.status(400).json({ error: 'Both front and back images are required.' });
+      return res.status(400).json({ error: 'Missing front or back image payload.' });
     }
-
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     const gradingSystemInstruction = `
 You are an elite, hyper-precise trading card authentication and grading AI equipped with advanced computer-vision simulation capabilities, including optical millimeter border measurement, simulated infrared (IR) surface scattering, and blue-light spectrum filtering.
@@ -34,32 +47,41 @@ Analyze the front and back images with absolute forensic precision and return va
 
 1. EXACT MILLIMETER CENTERING MEASUREMENT (100% Precision):
 - Mathematically measure the exact border widths in millimeters (or fractional ratios) for Top, Bottom, Left, and Right on both the front and back.
-- Example format: Front: Left 2.5mm / Right 2.0mm (55/45), Top 2.0mm / Bottom 2.0mm (50/50).
-- Apply strict numerical ratios to determine centering grades.
+- Format example: "Left 2.0mm / Right 2.5mm - 55/45".
 
 2. SIMULATED INFRARED & BLUE-LIGHT SURFACE/EDGE/CORNER ANALYSIS:
-- Simulate Infrared (IR) filtering across the card surface to detect heat signatures of micro-creases, subsurface indentations, pressure dents, and foil warping that are invisible under normal lighting.
+- Simulate Infrared (IR) filtering across the card surface to detect heat signatures of micro-creases, subsurface indentations, pressure dents, and foil warping.
 - Simulate Blue-Light spectrum filtering to isolate surface gloss integrity, hairline scratches, print lines, roller marks, and microscopic corner fraying or edge whitening.
-- Document any detected anomalies in the flaw arrays.
 
 3. COMPANY-SPECIFIC GRADING STANDARDS:
 - BECKETT (BGS): Extremely strict and rigid. Enforces strict subgrade mathematical limits. Zero tolerance for flaws found via IR/blue-light inspection.
 - PSA: Accurate, slightly more forgiving on minor back-surface or centering variances if the front presentation is pristine.
 - ACE GRADING: Collector-friendly, slightly more lenient on minor factory quirks while rewarding clean eye appeal.
 
-Output strict JSON structure matching this exact schema:
+Provide a detailed condition analysis and grade estimations matching this exact JSON structure:
 {
   "companyPredictions": {
-    "PSA": { "predictedGrade": "...", "reasoning": "..." },
-    "BGS": { 
-      "predictedGrade": "...", 
-      "estimatedSubgrades": { "centering": "...", "corners": "...", "edges": "...", "surface": "..." },
-      "reasoning": "..." 
+    "PSA": {
+      "predictedGrade": "PSA 9",
+      "reasoning": "..."
     },
-    "ACE": { "predictedGrade": "...", "reasoning": "..." }
+    "BGS": {
+      "predictedGrade": "9.5",
+      "estimatedSubgrades": {
+        "centering": "9.5",
+        "corners": "9.5",
+        "edges": "9.0",
+        "surface": "10"
+      },
+      "reasoning": "..."
+    },
+    "ACE": {
+      "predictedGrade": "ACE 9",
+      "reasoning": "..."
+    }
   },
   "subgrades": {
-    "centeringFront": "Exact mm measurements and ratio (e.g., Left 2.0mm / Right 2.5mm - 55/45)",
+    "centeringFront": "Exact mm measurements and ratio",
     "centeringBack": "Exact mm measurements and ratio",
     "cornersFlaws": ["List specific micro-flaws detected under blue-light/IR simulation"],
     "edgesFlaws": ["List specific edge chipping, silvering, or rough cuts detected"]
@@ -67,23 +89,23 @@ Output strict JSON structure matching this exact schema:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+    const response = await generateWithRetry({
+      model: "gemini-3.5-flash-lite",
       contents: [
         {
-          role: 'user',
+          role: "user",
           parts: [
-            { text: 'Analyze these front and back trading card images and provide the precise forensic grade report in JSON format.' },
+            { text: "Analyze these front and back trading card images and provide the precise forensic grade report in JSON format." },
             {
               inlineData: {
-                mimeType: 'image/jpeg',
-                data: frontBase64
+                data: frontBase64,
+                mimeType: "image/jpeg"
               }
             },
             {
               inlineData: {
-                mimeType: 'image/jpeg',
-                data: backBase64
+                data: backBase64,
+                mimeType: "image/jpeg"
               }
             }
           ]
@@ -91,19 +113,20 @@ Output strict JSON structure matching this exact schema:
       ],
       config: {
         systemInstruction: gradingSystemInstruction,
-        responseMimeType: 'application/json',
+        responseMimeType: "application/json",
         temperature: 0.1
       }
     });
 
-    // Fixed: response.text is a property, not a function call
-    const rawText = response.text; 
-    const parsedData = JSON.parse(rawText);
+    const responseText = response.text;
+    const data = JSON.parse(responseText);
 
-    return res.status(200).json(parsedData);
+    return res.status(200).json(data);
 
   } catch (err) {
-    console.error('Backend grading error:', err);
-    return res.status(500).json({ error: err.message || 'Internal server error during card evaluation.' });
+    console.error("Vercel Function Error:", err);
+    return res.status(500).json({ 
+      error: err.message || 'Internal server error processing images with Gemini.' 
+    });
   }
 }

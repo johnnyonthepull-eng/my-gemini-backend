@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable." });
+      return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable on Vercel." });
     }
 
     const body = req.body || {};
@@ -142,7 +142,7 @@ Return ONLY valid JSON matching this exact structure:
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
+      model: "gemini-3.8-flash",
       contents: [
         {
           role: "user",

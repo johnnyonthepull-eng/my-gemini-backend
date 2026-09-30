@@ -1,12 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
-/* =========================================================
-   CORS
-========================================================= */
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
 
 function corsHeaders() {
   return {
@@ -16,119 +14,81 @@ function corsHeaders() {
   };
 }
 
-/* =========================================================
-   SLEEP
-========================================================= */
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/* =========================================================
-   GEMINI REQUEST WITH RETRIES + MODEL FALLBACK
-========================================================= */
-
-async function generateWithFallback(params) {
-  // Purged retired models completely; using only active production flash models
-  const models = [
-    "gemini-3.8-flash",
-    "gemini-3.5-flash"
-  ];
-
-  let lastError = null;
-
-  for (const model of models) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`Trying \({model} - attempt\){attempt}/3`);
-
-        const response = await ai.models.generateContent({
-          model,
-          contents: [
-            {
-              role: "user",
-              parts: params.parts
-            }
-          ],
-          config: {
-            systemInstruction: params.systemInstruction,
-            responseMimeType: "application/json",
-            temperature: 0.0,
-            maxOutputTokens: 5000
-          }
-        });
-
-        console.log(`Gemini succeeded using ${model}`);
-
-        return response;
-
-      } catch (error) {
-        lastError = error;
-
-        const message = error?.message || String(error);
-        const status = error?.status || error?.code;
-
-        const isOverloaded =
-          status === 503 ||
-          status === 429 ||
-          message.includes("503") ||
-          message.includes("429") ||
-          message.toLowerCase().includes("high demand") ||
-          message.toLowerCase().includes("overloaded") ||
-          message.toLowerCase().includes("unavailable");
-
-        const isNotFound =
-          status === 404 ||
-          message.includes("404") ||
-          message.toLowerCase().includes("not found");
-
-        console.error(`\({model} attempt\){attempt} failed:`, message);
-
-        if (isNotFound) {
-          console.warn(`Model ${model} not found or unavailable. Skipping...`);
-          break; 
-        }
-
-        if (!isOverloaded) {
-          throw error;
-        }
-
-        if (attempt === 1) {
-          await sleep(2000);
-        } else if (attempt === 2) {
-          await sleep(5000);
-        }
-      }
-    }
-  }
-
-  throw lastError || new Error("All Gemini models are temporarily unavailable.");
-}
-
-/* =========================================================
-   DATA URL PARSER
-========================================================= */
-
 function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") {
     throw new Error("Invalid image data.");
   }
-
   const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
-
   if (!match || match.length !== 3) {
     throw new Error("Invalid image format. Expected a base64 data URL.");
   }
-
   return {
     mimeType: match[1],
     data: match[2]
   };
 }
 
-/* =========================================================
-   MAIN Vercel HANDLER
-========================================================= */
+async function callGeminiApi(systemInstruction, front, back) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
+  }
+
+  // Use the active model endpoint directly
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const payload = {
+    system_instruction: {
+      parts: [{ text: systemInstruction }]
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
+          },
+          {
+            inline_data: {
+              mime_type: front.mimeType,
+              data: front.data
+            }
+          },
+          {
+            inline_data: {
+              mime_type: back.mimeType,
+              data: back.data
+            }
+          }
+        ]
+      }
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.0,
+      maxOutputTokens: 5000
+    }
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini API error (\({response.status}):\){errorBody}`);
+  }
+
+  const data = await response.json();
+  const candidate = data.candidates?.[0];
+  if (!candidate || !candidate.content?.parts?.[0]?.text) {
+    throw new Error("Invalid response structure from Gemini API.");
+  }
+
+  return candidate.content.parts[0].text;
+}
 
 export default async function handler(req, res) {
   Object.entries(corsHeaders()).forEach(([key, value]) => {
@@ -140,21 +100,16 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Method not allowed"
-    });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
     const body = req.body || {};
-
     const frontImage = body.frontImage || body.frontBase64;
     const backImage = body.backImage || body.backBase64;
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({
-        error: "Missing front or back image data."
-      });
+      return res.status(400).json({ error: "Missing front or back image data." });
     }
 
     const front = parseDataUrl(frontImage);
@@ -240,77 +195,20 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    const geminiResponse = await generateWithFallback({
-      systemInstruction,
-      parts: [
-        {
-          text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-        },
-        {
-          inlineData: {
-            mimeType: front.mimeType,
-            data: front.data
-          }
-        },
-        {
-          inlineData: {
-            mimeType: back.mimeType,
-            data: back.data
-          }
-        }
-      ]
-    });
-
-    let text = geminiResponse.text;
-
-    if (!text) {
-      throw new Error("Gemini returned an empty response.");
-    }
-
+    let text = await callGeminiApi(systemInstruction, front, back);
     text = text.trim();
 
     if (text.startsWith("```json")) {
-      text = text
-        .replace(/^```json/, "")
-        .replace(/```$/, "")
-        .trim();
+      text = text.replace(/^```json/, "").replace(/```$/, "").trim();
     } else if (text.startsWith("```")) {
-      text = text
-        .replace(/^```/, "")
-        .replace(/```$/, "")
-        .trim();
+      text = text.replace(/^```/, "").replace(/```$/, "").trim();
     }
 
-    let result;
-
-    try {
-      result = JSON.parse(text);
-    } catch (jsonError) {
-      console.error("Gemini returned invalid JSON:", text);
-      throw new Error("Gemini returned invalid JSON.");
-    }
-
+    const result = JSON.parse(text);
     return res.status(200).json(result);
 
   } catch (error) {
     console.error("Vercel grading error:", error);
-
-    const message = error?.message || "Internal server error.";
-
-    if (
-      message.includes("high demand") ||
-      message.includes("503") ||
-      message.includes("429") ||
-      message.includes("unavailable") ||
-      message.includes("overloaded")
-    ) {
-      return res.status(503).json({
-        error: "Gemini is temporarily overloaded. The system tried multiple Gemini models but they are currently unavailable. Please try again in a few seconds."
-      });
-    }
-
-    return res.status(500).json({
-      error: message
-    });
+    return res.status(500).json({ error: error?.message || "Internal server error." });
   }
 }

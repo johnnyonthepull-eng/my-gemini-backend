@@ -1,7 +1,26 @@
 import { GoogleGenAI } from '@google/genai';
+import formidable from 'formidable';
+import fs from 'fs';
+
+// Disable default body parser so formidable can handle raw multipart/form-data
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+const parseForm = (req) => {
+  return new Promise((resolve, reject) => {
+    const form = formidable({ multiples: false });
+    form.parse(req, (err, fields, files) => {
+      if (err) return reject(err);
+      resolve({ fields, files });
+    });
+  });
+};
 
 export default async function handler(req, res) {
-  // 1. Enable CORS for Shopify storefront requests
+  // CORS Headers for Shopify storefront
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -15,20 +34,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { frontImage, backImage } = req.body;
+    const { files } = await parseForm(req);
 
-    if (!frontImage || !backImage) {
-      return res.status(400).json({ error: 'Both front and back card images are required.' });
+    // Formidable handles single files or arrays depending on version
+    const frontFileObj = Array.isArray(files.frontImage) ? files.frontImage[0] : files.frontImage;
+    const backFileObj = Array.isArray(files.backImage) ? files.backImage[0] : files.backImage;
+
+    if (!frontFileObj || !backFileObj) {
+      return res.status(400).json({ error: 'Both frontImage and backImage files are required.' });
     }
 
-    // Helper to strip data URL prefix if present
-    const cleanBase64 = (dataUrl) => {
-      const parts = dataUrl.split(',');
-      return parts.length > 1 ? parts[1] : dataUrl;
-    };
+    // Read raw files into base64 for Gemini
+    const frontBuffer = fs.readFileSync(frontFileObj.filepath);
+    const backBuffer = fs.readFileSync(backFileObj.filepath);
 
-    const frontBase64 = cleanBase64(frontImage);
-    const backBase64 = cleanBase64(backImage);
+    const frontBase64 = frontBuffer.toString('base64');
+    const backBase64 = backBuffer.toString('base64');
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -36,128 +57,150 @@ export default async function handler(req, res) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
+    const modelToUse = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
-    const promptText = `You are an expert trading card grading assistant and authenticator for OnThePullTCG. Inspect the provided front and back images of this trading card with extreme scrutiny.
+    const promptText = `You are an expert trading card grading assistant and authenticator for OnThePullTCG. Inspect the provided front and back images of this trading card with extreme scrutiny. Provide a thorough, professional evaluation.`;
 
-Return a valid JSON object ONLY, with no extra markdown formatting or backticks, structured exactly like this:
-{
-  "identification": {
-    "cardName": "Exact card name",
-    "setName": "Expansion set name",
-    "cardNumber": "Card number e.g. 215/198",
-    "rarity": "Rarity tier",
-    "language": "English, Japanese, Chinese, etc.",
-    "variant": "Normal, Holo, Reverse Holo, Secret Rare, etc.",
-    "confidence": "High / Medium / Low"
-  },
-  "grades": {
-    "psa": {
-      "grade": "Estimated grade integer e.g. 10, 9, 8",
-      "confidence": "High / Medium / Low",
-      "reasoning": "Detailed breakdown focusing on centering, corners, edges, and surface."
-    },
-    "bgs": {
-      "grade": "Estimated overall grade e.g. 9.5, 9",
-      "confidence": "High / Medium / Low",
-      "subgrades": {
-        "centering": "e.g. 9.5",
-        "corners": "e.g. 9.5",
-        "edges": "e.g. 9.0",
-        "surface": "e.g. 9.5"
-      },
-      "reasoning": "Detailed breakdown under BGS standards."
-    },
-    "ace": {
-      "grade": "Estimated grade integer e.g. 10, 9",
-      "confidence": "High / Medium / Low",
-      "reasoning": "Detailed breakdown under Ace Grading standards."
-    }
-  },
-  "recommendation": {
-    "bestService": "PSA, BGS, or ACE",
-    "verdict": "e.g. Highly Recommended to Grade / Grade for PC / Raw / Do Not Grade",
-    "reason": "Economic and condition-based justification for which grading company to choose."
-  },
-  "summary": "Comprehensive overall condition overview.",
-  "diagnostics": {
-    "frontCentering": {
-      "top": "Estimated measurement or ratio",
-      "bottom": "Estimated measurement or ratio",
-      "left": "Estimated measurement or ratio",
-      "right": "Estimated measurement or ratio",
-      "ratio": "e.g. 55/45"
-    },
-    "backCentering": {
-      "top": "Estimated measurement or ratio",
-      "bottom": "Estimated measurement or ratio",
-      "left": "Estimated measurement or ratio",
-      "right": "Estimated measurement or ratio",
-      "ratio": "e.g. 50/50"
-    },
-    "flaws": {
-      "corners": ["List specific corner issues or empty array"],
-      "edges": ["List specific edge whitening/chipping issues or empty array"],
-      "surface": ["List scratches, print lines, dents or empty array"]
-    }
-  }
-}`;
-
-    // Updated active model fallback sequence
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
-    let responseText = null;
-    let lastError = null;
-
-    for (const model of modelsToTry) {
-      let attempt = 1;
-      while (attempt <= 2) {
-        try {
-          console.log(`Trying \({model} - attempt\){attempt}/2`);
-          
-          const response = await ai.models.generateContent({
-            model: model,
-            contents: [
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: frontBase64
-                }
+    // Define response schema for structured JSON output matching your UI
+    const responseSchema = {
+      type: "OBJECT",
+      properties: {
+        identification: {
+          type: "OBJECT",
+          properties: {
+            cardName: { type: "STRING" },
+            setName: { type: "STRING" },
+            cardNumber: { type: "STRING" },
+            rarity: { type: "STRING" },
+            language: { type: "STRING" },
+            variant: { type: "STRING" },
+            confidence: { type: "STRING" }
+          },
+          required: ["cardName", "setName", "cardNumber", "rarity", "language", "variant", "confidence"]
+        },
+        grades: {
+          type: "OBJECT",
+          properties: {
+            psa: {
+              type: "OBJECT",
+              properties: {
+                grade: { type: "STRING" },
+                confidence: { type: "STRING" },
+                reasoning: { type: "STRING" }
               },
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: backBase64
-                }
+              required: ["grade", "confidence", "reasoning"]
+            },
+            bgs: {
+              type: "OBJECT",
+              properties: {
+                grade: { type: "STRING" },
+                confidence: { type: "STRING" },
+                subgrades: {
+                  type: "OBJECT",
+                  properties: {
+                    centering: { type: "STRING" },
+                    corners: { type: "STRING" },
+                    edges: { type: "STRING" },
+                    surface: { type: "STRING" }
+                  },
+                  required: ["centering", "corners", "edges", "surface"]
+                },
+                reasoning: { type: "STRING" }
               },
-              {
-                text: promptText
-              }
-            ]
-          });
-
-          responseText = response.text();
-          if (responseText) break;
-        } catch (err) {
-          lastError = err;
-          console.error(`\({model} attempt\){attempt} failed:`, err.message);
-          attempt++;
+              required: ["grade", "confidence", "subgrades", "reasoning"]
+            },
+            ace: {
+              type: "OBJECT",
+              properties: {
+                grade: { type: "STRING" },
+                confidence: { type: "STRING" },
+                reasoning: { type: "STRING" }
+              },
+              required: ["grade", "confidence", "reasoning"]
+            }
+          },
+          required: ["psa", "bgs", "ace"]
+        },
+        recommendation: {
+          type: "OBJECT",
+          properties: {
+            bestService: { type: "STRING" },
+            verdict: { type: "STRING" },
+            reason: { type: "STRING" }
+          },
+          required: ["bestService", "verdict", "reason"]
+        },
+        summary: { type: "STRING" },
+        diagnostics: {
+          type: "OBJECT",
+          properties: {
+            frontCentering: {
+              type: "OBJECT",
+              properties: {
+                top: { type: "STRING" },
+                bottom: { type: "STRING" },
+                left: { type: "STRING" },
+                right: { type: "STRING" },
+                ratio: { type: "STRING" }
+              },
+              required: ["top", "bottom", "left", "right", "ratio"]
+            },
+            backCentering: {
+              type: "OBJECT",
+              properties: {
+                top: { type: "STRING" },
+                bottom: { type: "STRING" },
+                left: { type: "STRING" },
+                right: { type: "STRING" },
+                ratio: { type: "STRING" }
+              },
+              required: ["top", "bottom", "left", "right", "ratio"]
+            },
+            flaws: {
+              type: "OBJECT",
+              properties: {
+                corners: { type: "ARRAY", items: { type: "STRING" } },
+                edges: { type: "ARRAY", items: { type: "STRING" } },
+                surface: { type: "ARRAY", items: { type: "STRING" } }
+              },
+              required: ["corners", "edges", "surface"]
+            }
+          },
+          required: ["frontCentering", "backCentering", "flaws"]
         }
+      },
+      required: ["identification", "grades", "recommendation", "summary", "diagnostics"]
+    };
+
+    console.log(`Using model: ${modelToUse}`);
+
+    const response = await ai.models.generateContent({
+      model: modelToUse,
+      contents: [
+        {
+          inlineData: {
+            mimeType: frontFileObj.mimetype || 'image/jpeg',
+            data: frontBase64
+          }
+        },
+        {
+          inlineData: {
+            mimeType: backFileObj.mimetype || 'image/jpeg',
+            data: backBase64
+          }
+        },
+        {
+          text: promptText
+        }
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
       }
-      if (responseText) break;
-    }
+    });
 
-    if (!responseText) {
-      throw new Error(lastError ? lastError.message : 'All model attempts failed to generate a response.');
-    }
-
-    // Clean up markdown block wrappers if model outputs them anyway
-    let cleanJsonStr = responseText.trim();
-    if (cleanJsonStr.startsWith('```json')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleanJsonStr.startsWith('```')) {
-      cleanJsonStr = cleanJsonStr.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-
-    const parsedData = JSON.parse(cleanJsonStr);
+    const responseText = response.text();
+    const parsedData = JSON.parse(responseText);
     return res.status(200).json(parsedData);
 
   } catch (error) {

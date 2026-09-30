@@ -1,9 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default async function handler(req, res) {
-  // CORS Headers for Shopify / Frontend access
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -13,8 +13,7 @@ export default async function handler(req, res) {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
@@ -28,16 +27,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing front or back image payload.' });
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
     const prompt = `
       You are an expert professional trading card condition evaluator and grader (PSA, BGS, ACE).
       Analyze these two trading card images (Image 1 = Front, Image 2 = Back).
       
-      Provide a detailed condition analysis and grade estimations in valid JSON matching this structure:
+      Provide a detailed condition analysis and grade estimations in valid JSON matching this exact structure:
       {
         "companyPredictions": {
           "PSA": {
@@ -68,23 +62,34 @@ export default async function handler(req, res) {
       }
     `;
 
-    const imageParts = [
-      {
-        inlineData: {
-          data: frontBase64,
-          mimeType: "image/jpeg"
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                data: frontBase64,
+                mimeType: "image/jpeg"
+              }
+            },
+            {
+              inlineData: {
+                data: backBase64,
+                mimeType: "image/jpeg"
+              }
+            }
+          ]
         }
-      },
-      {
-        inlineData: {
-          data: backBase64,
-          mimeType: "image/jpeg"
-        }
+      ],
+      config: {
+        responseMimeType: "application/json"
       }
-    ];
+    });
 
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const responseText = await result.response.text();
+    const responseText = response.text;
     const data = JSON.parse(responseText);
 
     return res.status(200).json(data);

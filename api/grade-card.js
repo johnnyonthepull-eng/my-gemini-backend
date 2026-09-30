@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // 1. CORS Headers
+  // 1. Explicit CORS Headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -13,41 +13,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { frontImage, backImage } = req.body;
+    const { frontImage, backImage } = req.body || {};
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({ error: "Missing front or back image data." });
+      return res.status(400).json({ error: "Missing frontImage or backImage payload in request body." });
     }
 
-    // Helper to clean base64 data URL prefix if present (e.g., "data:image/jpeg;base64,...")
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
+    }
+
+    // Helper to strip data URL prefix
     const cleanBase64 = (dataUrl) => {
+      if (typeof dataUrl !== 'string') return '';
       const parts = dataUrl.split(",");
       return parts.length > 1 ? parts[1] : dataUrl;
     };
 
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
-    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is not configured on Vercel.");
-    }
-
-    // 2. Direct REST API call to Gemini (No npm packages required!)
+    // Using gemini-2.5-flash for stable vision support
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are an expert TCG archivist and identifier. Analyze these front and back card images with 100% precision. Ignore condition, wear, or grading—focus purely on reading the card for what it exactly is. 
+    const promptText = `Analyze these front and back card images with 100% precision. Ignore condition or wear—focus purely on identifying the card. 
 
-Provide your response in strict JSON format with the following keys:
+Provide your response in strict JSON format with these exact keys:
 {
   "cardName": "Exact name of the card",
-  "setNumber": "Card number / set code (e.g. 025/198, SWSH065)",
+  "setNumber": "Card number / set code (e.g. 025/198)",
   "setName": "Name of the expansion set",
-  "rarity": "Rarity symbol or tier (e.g. Secret Rare, Illustration Rare, Ultra Rare)",
-  "language": "Language of the card (English, Japanese, Simplified Chinese, etc.)",
-  "variantType": "Holo pattern, reverse holo, master ball reverse, 1st edition, promo, etc.",
-  "extractedText": "Key text, attacks, abilities, or flavor text visible on the card",
-  "additionalDetails": "Any unique markers, copyright info, or distinguishing features"
+  "rarity": "Rarity tier (e.g. Illustration Rare, Ultra Rare)",
+  "language": "Language of the card",
+  "variantType": "Holo pattern, reverse holo, promo, etc.",
+  "extractedText": "Key text or attacks visible on the card",
+  "additionalDetails": "Any unique markers or copyright info"
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {
@@ -78,26 +79,32 @@ Provide your response in strict JSON format with the following keys:
       })
     });
 
+    const responseText = await geminiResponse.text();
+
     if (!geminiResponse.ok) {
-      const errorBody = await geminiResponse.text();
-      throw new Error(`Gemini API error (\({geminiResponse.status}):\){errorBody}`);
+      return res.status(502).json({ error: `Gemini API returned status \({geminiResponse.status}:\){responseText}` });
     }
 
-    const data = await geminiResponse.json();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseErr) {
+      return res.status(500).json({ error: "Failed to parse JSON response from Gemini API." });
+    }
+
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
     if (!rawText) {
-      throw new Error("Received empty response from Gemini model.");
+      return res.status(500).json({ error: "No text generated from the Gemini model." });
     }
 
-    // Clean up potential markdown code blocks from the AI output
-    const jsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsedData = JSON.parse(jsonString);
+    // Clean markdown blocks if present
+    const cleanJsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+    const parsedCardData = JSON.parse(cleanJsonString);
 
-    return res.status(200).json(parsedData);
+    return res.status(200).json(parsedCardData);
 
   } catch (error) {
-    console.error("Card Reader Error:", error);
-    return res.status(500).json({ error: error.message || "Failed to process card data." });
+    console.error("Critical serverless catch:", error);
+    return res.status(500).json({ error: error.message || "Internal server crash during card analysis." });
   }
 }

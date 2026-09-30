@@ -32,26 +32,41 @@ export default async function handler(req, res) {
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
 
-    // Using Gemini 3.8 Flash vision endpoint
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are a professional trading card grader and archivist. Perform a rigorous condition and authenticity analysis on these front and back card images. 
+    const promptText = `CRITICAL INSTRUCTIONS: Look closely at the attached front and back trading card images. You MUST extract real data. Do NOT return blank values, dashes, or placeholders. If you are unsure, make your best expert estimation.
 
-Provide your response in strict JSON format with these exact keys:
+Return ONLY a valid JSON object matching this exact structure:
 {
-  "cardName": "Exact name of the card",
-  "setNumber": "Card number / set code (e.g. 025/198)",
+  "cardName": "Name of the character or subject",
   "setName": "Name of the expansion set",
-  "rarity": "Rarity tier (e.g. Illustration Rare, Ultra Rare)",
-  "language": "Language of the card",
-  "variantType": "Holo pattern, reverse holo, promo, etc.",
-  "estimatedGrade": "Estimated grade range (e.g. PSA 9-10, Mint, Near Mint, Lightly Played)",
-  "centering": "Analysis of front/back centering borders (e.g. 50/50, slight left bias)",
-  "corners": "Condition breakdown of all 4 corners (whitening, dings, clean)",
-  "edges": "Condition breakdown of the edges (silvering, chipping, clean)",
-  "surface": "Surface condition check (scratches, print lines, holo scuffs)",
-  "extractedText": "Key text or attacks visible on the card",
-  "additionalDetails": "Any unique markers, centering notes, or flaws"
+  "cardNumber": "Card number string (e.g. 025/198)",
+  "rarity": "Rarity tier (e.g. Illustration Rare, Holofoil, Secret Rare)",
+  "language": "Language (e.g. English, Japanese, Simplified Chinese)",
+  "variant": "Finish variant (e.g. Holofoil, Reverse Holo, Normal, Master Ball)",
+  "confidence": "High",
+  "psaGrade": "Estimated PSA Grade (e.g. PSA 9 or PSA 10)",
+  "psaLabel": "Brief note on PSA condition",
+  "bgsGrade": "Estimated BGS Grade (e.g. 9.5)",
+  "bgsSubgrades": "C: 9.5 | Cr: 9.5 | E: 9.5 | S: 9.5",
+  "aceGrade": "Estimated ACE Grade (e.g. 10)",
+  "aceLabel": "Brief note on ACE condition",
+  "recGrade": "PSA",
+  "recLabel": "Recommended grading house rationale",
+  "conditionSummary": "Detailed description of overall condition based on front and back visuals.",
+  "frontTop": "48%",
+  "frontBottom": "52%",
+  "frontLeft": "50%",
+  "frontRight": "50%",
+  "frontRatio": "50/50",
+  "backTop": "50%",
+  "backBottom": "50%",
+  "backLeft": "49%",
+  "backRight": "51%",
+  "backRatio": "50/50",
+  "cornerFlaws": "Describe corner condition or state clean",
+  "edgeFlaws": "Describe edge condition or state clean",
+  "surfaceFlaws": "Describe surface condition or state clean"
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {
@@ -87,8 +102,7 @@ Provide your response in strict JSON format with these exact keys:
     if (!geminiResponse.ok) {
       console.error("Gemini API rejected request:", responseText);
       const statusCode = geminiResponse.status;
-      const errorMessage = "Google API Failed with code " + statusCode + ": " + responseText;
-      return res.status(502).json({ error: errorMessage });
+      return res.status(502).json({ error: "Google API Failed with code " + statusCode + ": " + responseText });
     }
 
     let data;

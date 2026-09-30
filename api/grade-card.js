@@ -142,7 +142,7 @@ Return ONLY valid JSON matching this exact structure:
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       contents: [
         {
           role: "user",
@@ -161,7 +161,11 @@ Return ONLY valid JSON matching this exact structure:
       }
     });
 
-    let text = response.text.trim();
+    let text = response.text ? response.text.trim() : "";
+    if (!text) {
+      throw new Error("Gemini returned an empty response.");
+    }
+
     if (text.startsWith("```json")) {
       text = text.replace(/^```json/, "").replace(/```$/, "").trim();
     } else if (text.startsWith("```")) {

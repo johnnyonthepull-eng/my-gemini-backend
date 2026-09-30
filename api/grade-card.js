@@ -4,7 +4,6 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-
 /* =========================================================
    CORS
 ========================================================= */
@@ -17,7 +16,6 @@ function corsHeaders() {
   };
 }
 
-
 /* =========================================================
    SLEEP
 ========================================================= */
@@ -25,7 +23,6 @@ function corsHeaders() {
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
 
 /* =========================================================
    GEMINI REQUEST WITH RETRIES + MODEL FALLBACK
@@ -61,6 +58,7 @@ async function generateWithFallback(params) {
         });
 
         console.log(`Gemini succeeded using ${model}`);
+
         return response;
 
       } catch (error) {
@@ -106,7 +104,6 @@ async function generateWithFallback(params) {
   throw lastError || new Error("All Gemini models are temporarily unavailable.");
 }
 
-
 /* =========================================================
    DATA URL PARSER
 ========================================================= */
@@ -127,7 +124,6 @@ function parseDataUrl(dataUrl) {
     data: match[2]
   };
 }
-
 
 /* =========================================================
    MAIN Vercel HANDLER

@@ -16,6 +16,10 @@ function corsHeaders() {
   };
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") {
     throw new Error("Invalid image data.");
@@ -44,7 +48,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Gather all 5 API keys from Vercel environment variables
     const apiKeys = [
       process.env.GEMINI_API_KEY_1,
       process.env.GEMINI_API_KEY_2,
@@ -153,66 +156,74 @@ Return ONLY valid JSON matching this exact structure:
     let response = null;
     let lastError = null;
 
-    // Loop through all 5 keys and models
     outerLoop: for (const key of apiKeys) {
       const ai = new GoogleGenAI({ apiKey: key });
 
       for (const model of modelsToTry) {
-        try {
-          console.log(`Trying model ${model} with key pool...`);
-          response = await ai.models.generateContent({
-            model,
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-                  },
-                  {
-                    inlineData: {
-                      mimeType: front.mimeType,
-                      data: front.data
+        // Try up to 2 attempts per model with a short sleep delay for 503 spikes
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            console.log(`Trying model \({model} (attempt\){attempt}) with key pool...`);
+            response = await ai.models.generateContent({
+              model,
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
+                    },
+                    {
+                      inlineData: {
+                        mimeType: front.mimeType,
+                        data: front.data
+                      }
+                    },
+                    {
+                      inlineData: {
+                        mimeType: back.mimeType,
+                        data: back.data
+                      }
                     }
-                  },
-                  {
-                    inlineData: {
-                      mimeType: back.mimeType,
-                      data: back.data
-                    }
-                  }
-                ]
+                  ]
+                }
+              ],
+              config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                temperature: 0.0,
+                maxOutputTokens: 5000
               }
-            ],
-            config: {
-              systemInstruction,
-              responseMimeType: "application/json",
-              temperature: 0.0,
-              maxOutputTokens: 5000
+            });
+
+            break outerLoop;
+          } catch (err) {
+            lastError = err;
+            const msg = err?.message || String(err);
+            console.warn(`Attempt failed:`, msg);
+
+            const isOverloaded = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.toLowerCase().includes("high demand");
+            const isQuota = msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota");
+
+            if (isOverloaded && attempt === 1) {
+              // Wait 1.5 seconds and retry the same model
+              await sleep(1500);
+              continue;
             }
-          });
 
-          break outerLoop;
-        } catch (err) {
-          lastError = err;
-          const msg = err?.message || String(err);
-          console.warn(`Attempt failed:`, msg);
-
-          if (
-            msg.includes("429") ||
-            msg.includes("RESOURCE_EXHAUSTED") ||
-            msg.includes("quota")
-          ) {
-            continue; // Try next model or next key
-          } else {
-            throw err;
+            if (isOverloaded || isQuota) {
+              // Move to the next model / key
+              break; 
+            } else {
+              throw err;
+            }
           }
         }
       }
     }
 
     if (!response) {
-      throw lastError || new Error("All pooled keys and models have exhausted their daily quotas.");
+      throw lastError || new Error("All pooled keys and models are currently unavailable due to high demand or quota limits.");
     }
 
     let text = response.text;
@@ -234,13 +245,15 @@ Return ONLY valid JSON matching this exact structure:
     console.error("Vercel grading error:", error);
     const errMessage = error?.message || "Internal server error.";
 
-    if (
-      errMessage.includes("429") ||
-      errMessage.includes("RESOURCE_EXHAUSTED") ||
-      errMessage.includes("quota")
-    ) {
+    if (errMessage.includes("503") || errMessage.includes("UNAVAILABLE")) {
+      return res.status(503).json({
+        error: "The AI servers are experiencing temporary high demand spikes. Please click 'Analyze Card Condition' again in a few seconds."
+      });
+    }
+
+    if (errMessage.includes("429") || errMessage.includes("RESOURCE_EXHAUSTED")) {
       return res.status(429).json({
-        error: "All free tier limits across your 5 keys have been reached for today. Try again tomorrow!"
+        error: "Free tier limits reached across your pooled keys. Please try again later."
       });
     }
 

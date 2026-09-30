@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // 1. Explicit CORS Headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -81,7 +80,9 @@ Provide your response in strict JSON format with these exact keys:
 
     if (!geminiResponse.ok) {
       console.error("Gemini API rejected request:", responseText);
-      return res.status(502).json({ error: `Google API Error (\({geminiResponse.status}):\){responseText}` });
+      const statusCode = geminiResponse.status;
+      const errorMessage = "Google API Failed with code " + statusCode + ": " + responseText;
+      return res.status(502).json({ error: errorMessage });
     }
 
     let data;

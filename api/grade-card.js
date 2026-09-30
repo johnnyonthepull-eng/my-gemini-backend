@@ -33,14 +33,14 @@ function sleep(ms) {
 
 async function generateWithFallback(params) {
   /*
-   * Using current, production-ready Gemini models.
+   * Updated with current, active Gemini model endpoints.
    * If a model returns 503/429, we retry with backoff.
    * If a model returns 404 (not found), we immediately 
    * skip to the next model in the array.
    */
   const models = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro"
+    "gemini-3.8-flash",
+    "gemini-3.1-pro-preview"
   ];
 
   let lastError = null;
@@ -92,8 +92,8 @@ async function generateWithFallback(params) {
         console.error(`\({model} attempt\){attempt} failed:`, message);
 
         /*
-         * If the model isn't found (404), don't retry it—
-         * break out of attempt loop and try the next model.
+         * If the model isn't found (404), don't retry—
+         * break out of attempt loop and try the next model immediately.
          */
         if (isNotFound) {
           console.warn(`Model ${model} not found. Skipping to next model...`);

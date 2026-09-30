@@ -33,7 +33,6 @@ export default async function handler(req, res) {
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
 
-    // Using gemini-2.0-flash which is widely supported for REST API vision
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const promptText = `Analyze these front and back card images with 100% precision. Ignore condition or wear—focus purely on identifying the card. 

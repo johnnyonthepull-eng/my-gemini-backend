@@ -18,34 +18,37 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing frontImage or backImage payload." });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
-    }
-
     const cleanBase64 = (dataUrl) => {
       if (typeof dataUrl !== 'string') return '';
-      const parts = dataUrl.split(",");
-      return parts.length > 1 ? parts[1] : dataUrl;
+      if (dataUrl.includes(",")) {
+        return dataUrl.split(",")[1].trim();
+      }
+      return dataUrl.trim();
     };
 
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
+    }
+
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are a master TCG authenticator and professional grading director for PSA, BGS, and ACE. Analyze the uploaded front and back images of THIS specific trading card. Do not generalize. Extract exact details.
+    const promptText = `You are a master TCG authenticator and professional grading director for PSA, BGS, and ACE. 
+Carefully examine the provided front and back images of THIS specific trading card. Do not use placeholders or generic text. Extract and evaluate the actual card shown in the images.
 
-MANDATORY RULES:
+MANDATORY INSTRUCTIONS:
 1. Identify the exact card name, expansion set, card number, rarity, language, and finish variant visible in the images.
-2. Perform a strict condition audit. Provide realistic estimated grades for PSA, BGS, and ACE based on visible wear.
-3. For visual diagnostics, estimate the physical border widths in millimeters (mm) to one decimal place (e.g., "1.8 mm", "2.2 mm") for the top, bottom, left, and right of both the front and back images, assuming standard trading card dimensions (63x88mm).
-4. NEVER return dashes ("—"), empty strings, or placeholders. Every property must contain a precise, custom description generated specifically for this card.
+2. Provide realistic estimated grades for PSA, BGS, and ACE based on the visible condition, whitening, centering, and surface wear of THIS specific card.
+3. For visual diagnostics, estimate the physical border widths in millimeters (mm) to one decimal place (e.g., "1.8 mm") for top, bottom, left, and right of both front and back images.
+4. Provide comprehensive custom write-ups for condition summaries, corner flaws, edge flaws, and surface flaws based on what is physically observed. Never use dashes ("—") or blank spaces.
 
 Return ONLY a valid JSON object matching this exact key structure:
 {
-  "cardName": "Exact name of this specific card",
-  "setName": "Exact expansion set name",
+  "cardName": "Exact character name or title visible on the card",
+  "setName": "Exact name of the expansion set",
   "cardNumber": "Exact card number / set code (e.g. 025/198)",
   "rarity": "Exact rarity tier",
   "language": "Detected language (e.g. English, Japanese)",
@@ -60,16 +63,16 @@ Return ONLY a valid JSON object matching this exact key structure:
   "recGrade": "PSA",
   "recLabel": "Specific recommendation rationale for this card",
   "conditionSummary": "Detailed custom paragraph summarizing this specific card's overall condition and eye appeal.",
-  "frontTop": "e.g. 1.8 mm",
-  "frontBottom": "e.g. 2.0 mm",
-  "frontLeft": "e.g. 1.9 mm",
-  "frontRight": "e.g. 1.9 mm",
-  "frontRatio": "e.g. 50/50",
-  "backTop": "e.g. 2.1 mm",
-  "backBottom": "e.g. 1.9 mm",
-  "backLeft": "e.g. 1.5 mm",
-  "backRight": "e.g. 2.5 mm",
-  "backRatio": "e.g. 45/55",
+  "frontTop": "1.8 mm",
+  "frontBottom": "2.0 mm",
+  "frontLeft": "1.9 mm",
+  "frontRight": "1.9 mm",
+  "frontRatio": "50/50",
+  "backTop": "2.1 mm",
+  "backBottom": "1.9 mm",
+  "backLeft": "1.5 mm",
+  "backRight": "2.5 mm",
+  "backRatio": "45/55",
   "cornerFlaws": "Custom description of all 4 corners observed on this card",
   "edgeFlaws": "Custom description of front and back edges observed on this card",
   "surfaceFlaws": "Custom description of surface gloss, scratches, or print lines observed on this card"
@@ -85,8 +88,18 @@ Return ONLY a valid JSON object matching this exact key structure:
           {
             parts: [
               { text: promptText },
-              { inlineData: { mimeType: "image/jpeg", data: frontBase64Data } },
-              { inlineData: { mimeType: "image/jpeg", data: backBase64Data } }
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: frontBase64Data
+                }
+              },
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: backBase64Data
+                }
+              }
             ]
           }
         ],

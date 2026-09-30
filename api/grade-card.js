@@ -1,7 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 
 export default async function handler(req, res) {
-  // Enable CORS for your Shopify store
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -69,7 +68,7 @@ Output strict JSON structure matching this exact schema:
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash-lite',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           role: 'user',
@@ -97,7 +96,8 @@ Output strict JSON structure matching this exact schema:
       }
     });
 
-    const rawText = response.text();
+    // Fixed: response.text is a property, not a function call
+    const rawText = response.text; 
     const parsedData = JSON.parse(rawText);
 
     return res.status(200).json(parsedData);
@@ -106,4 +106,4 @@ Output strict JSON structure matching this exact schema:
     console.error('Backend grading error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error during card evaluation.' });
   }
-}X
+}

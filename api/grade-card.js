@@ -29,9 +29,9 @@ function sleep(ms) {
 ========================================================= */
 
 async function generateWithFallback(params) {
+  // Updated to use only the active, unrestricted production model ID
   const models = [
-    "gemini-3.8-flash",
-    "gemini-2.5-flash"
+    "gemini-3.8-flash"
   ];
 
   let lastError = null;

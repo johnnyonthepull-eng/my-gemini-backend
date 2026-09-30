@@ -1,8 +1,8 @@
 {
-  "name": "shopify-card-grader-api",
+  "name": "my-gemini-backend",
   "version": "1.0.0",
-  "private": true,
+  "type": "module",
   "dependencies": {
-    "@google/genai": "latest"
+    "@google/genai": "^2.24.0"
   }
 }

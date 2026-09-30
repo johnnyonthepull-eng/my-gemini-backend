@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Retry wrapper for extra resilience
+// Retry wrapper to ensure resilience against traffic spikes
 async function generateWithRetry(params, retries = 3, delay = 1000) {
   try {
     return await ai.models.generateContent(params);
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
     `;
 
     const response = await generateWithRetry({
-      model: "gemini-3.5-flash-lite", 
+      model: "gemini-3.5-flash-lite",
       contents: [
         {
           role: "user",

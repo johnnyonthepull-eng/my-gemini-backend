@@ -32,9 +32,6 @@ function sleep(ms) {
 ========================================================= */
 
 async function generateWithFallback(params) {
-  /*
-   * Stable production-tier model IDs for reliable routing.
-   */
   const models = [
     "gemini-3.8-flash",
     "gemini-2.5-flash"
@@ -58,7 +55,7 @@ async function generateWithFallback(params) {
           config: {
             systemInstruction: params.systemInstruction,
             responseMimeType: "application/json",
-            temperature: 0.1,
+            temperature: 0.0,
             maxOutputTokens: 5000
           }
         });
@@ -88,10 +85,6 @@ async function generateWithFallback(params) {
 
         console.error(`\({model} attempt\){attempt} failed:`, message);
 
-        /*
-         * If a model isn't found or is restricted on this key, 
-         * skip to the next model immediately.
-         */
         if (isNotFound) {
           console.warn(`Model ${model} not found or unavailable. Skipping...`);
           break; 
@@ -171,138 +164,14 @@ export default async function handler(req, res) {
     const back = parseDataUrl(backImage);
 
     const systemInstruction = `
-You are an expert trading card identification and
-condition pre-screening AI.
+You are a deterministic trading card pre-screening engine and optical analysis system. 
 
-You are analysing photographs of a physical trading card.
+Mandatory Analysis Protocol:
+1. Virtual Filter Simulation: Mentally apply high-contrast, edge-enhancement, and color-channel separation filters to the image pixels to aggressively expose surface micro-scratches, foil swirls, print lines, dents, and back/front edge whitening (chipping). 
+2. Exact Centering Measurement: You must calculate and provide precise estimated border measurements in millimeters (mm) for top, bottom, left, and right borders on both the front and back, alongside the corresponding ratio (e.g., "Left: 2.5mm / Right: 1.5mm (62/38)").
+3. Strict Consistency Rules: Identical images must return identical structural JSON output. If edge whitening or a surface hairline scratch is detected via the filtered analysis, cap the appropriate grades instantly based on strict industry standards.
 
-IMPORTANT LIMITATIONS:
-
-You can only assess what is actually visible in the
-photographs.
-
-Do NOT claim to have used infrared cameras,
-ultraviolet cameras, microscopes, spectrometers,
-or physical measuring equipment.
-
-Do NOT claim 100% certainty.
-
-Do NOT invent defects that cannot be seen.
-
-Do NOT invent card information.
-
-If card identification is uncertain, say so and lower
-the identification confidence.
-
-If centering cannot be measured reliably from the
-photograph, provide an estimate and clearly describe
-the limitation.
-
-The output is an AI pre-screening estimate and NOT an
-official PSA, Beckett or ACE grade.
-
-=========================================================
-CARD IDENTIFICATION
-=========================================================
-
-Identify:
-
-- Card name
-- Set / expansion
-- Card number
-- Rarity
-- Language
-- Variant
-- Identification confidence
-
-=========================================================
-CONDITION ANALYSIS
-=========================================================
-
-Inspect both front and back photographs.
-
-Assess:
-
-1. Centering
-2. Corners
-3. Edges
-4. Surface
-5. Visible whitening
-6. Visible chipping
-7. Visible scratches
-8. Visible print lines
-9. Visible dents
-10. Visible creases
-11. Visible alignment issues
-
-Pay particular attention to:
-
-- top/bottom centering
-- left/right centering
-- back centering
-- corner whitening
-- edge whitening
-- silvering
-- scratches
-- surface marks
-- print defects
-
-=========================================================
-PSA ESTIMATE
-=========================================================
-
-Provide a realistic estimated PSA grade.
-
-Do not automatically give PSA 10.
-
-The grade must be based on visible evidence.
-
-=========================================================
-BGS ESTIMATE
-=========================================================
-
-Provide:
-
-- overall estimated BGS grade
-- centering subgrade
-- corners subgrade
-- edges subgrade
-- surface subgrade
-
-Do not automatically give 10 subgrades.
-
-=========================================================
-ACE ESTIMATE
-=========================================================
-
-Provide a realistic estimated ACE grade.
-
-=========================================================
-GRADING SERVICE RECOMMENDATION
-=========================================================
-
-Recommend the grading service based ONLY on the
-predicted condition and the characteristics visible
-in the photographs.
-
-Do not claim knowledge of current market prices.
-
-Explain why the recommended service fits the predicted
-condition.
-
-=========================================================
-SUMMARY
-=========================================================
-
-Give a concise overall condition summary.
-
-=========================================================
-JSON
-=========================================================
-
-Return ONLY valid JSON.
-
-Use exactly this structure:
+Return ONLY valid JSON matching this exact structure:
 
 {
   "identification": {
@@ -314,15 +183,12 @@ Use exactly this structure:
     "variant": "",
     "confidence": ""
   },
-
   "grades": {
-
     "psa": {
       "grade": "",
       "confidence": "",
       "reason": ""
     },
-
     "bgs": {
       "grade": "",
       "confidence": "",
@@ -334,35 +200,37 @@ Use exactly this structure:
       },
       "reason": ""
     },
-
     "ace": {
       "grade": "",
       "confidence": "",
       "reason": ""
     }
-
   },
-
   "recommendation": {
     "service": "",
     "estimatedGrade": "",
     "verdict": "",
     "reason": ""
   },
-
   "summary": "",
-
   "diagnostics": {
-
-    "frontCentering": "",
-    "backCentering": "",
-
+    "frontCentering": {
+      "topMm": "",
+      "bottomMm": "",
+      "leftMm": "",
+      "rightMm": "",
+      "ratio": ""
+    },
+    "backCentering": {
+      "topMm": "",
+      "bottomMm": "",
+      "leftMm": "",
+      "rightMm": "",
+      "ratio": ""
+    },
     "cornerFlaws": [],
-
     "edgeFlaws": [],
-
     "surfaceFlaws": []
-
   }
 }
 `;
@@ -371,7 +239,7 @@ Use exactly this structure:
       systemInstruction,
       parts: [
         {
-          text: "Analyse the front and back photographs of this trading card and return the complete JSON grading pre-screen."
+          text: "Apply virtual contrast/edge enhancement filters to analyze surface defects, print lines, and edge whitening, measure exact border mm dimensions, and return the complete JSON pre-screen."
         },
         {
           inlineData: {

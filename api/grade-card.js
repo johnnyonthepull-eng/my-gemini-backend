@@ -1,5 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 
+// Increase Vercel function body size limit for large image uploads
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "10mb",
+    },
+  },
+};
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
@@ -26,7 +35,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { frontImage, backImage } = req.body;
+    // Ensure body is parsed if sent as raw text or stream
+    let body = req.body;
+    if (typeof body === "string") {
+      body = JSON.parse(body);
+    }
+
+    const frontImage = body?.frontImage;
+    const backImage = body?.backImage;
 
     if (!frontImage || !backImage) {
       return res.status(400).json({ error: "Missing front or back image." });

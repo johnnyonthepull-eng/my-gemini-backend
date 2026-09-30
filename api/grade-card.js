@@ -16,10 +16,6 @@ function corsHeaders() {
   };
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") {
     throw new Error("Invalid image data.");
@@ -58,7 +54,7 @@ export default async function handler(req, res) {
     ].filter(Boolean);
 
     if (apiKeys.length === 0) {
-      throw new Error("No GEMINI_API_KEY environment variables found on Vercel.");
+      return res.status(500).json({ error: "No GEMINI_API_KEY environment variables found on Vercel." });
     }
 
     const body = req.body || {};
@@ -152,86 +148,44 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    const modelsToTry = ["gemini-3.8-flash", "gemini-3.5-flash"];
     let response = null;
     let lastError = null;
 
-    outerLoop: for (const key of apiKeys) {
-      const ai = new GoogleGenAI({ apiKey: key });
-
-      for (const model of modelsToTry) {
-        // Try up to 2 attempts per model with a short sleep delay for 503 spikes
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          try {
-            console.log(`Trying model \({model} (attempt\){attempt}) with key pool...`);
-            response = await ai.models.generateContent({
-              model,
-              contents: [
-                {
-                  role: "user",
-                  parts: [
-                    {
-                      text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-                    },
-                    {
-                      inlineData: {
-                        mimeType: front.mimeType,
-                        data: front.data
-                      }
-                    },
-                    {
-                      inlineData: {
-                        mimeType: back.mimeType,
-                        data: back.data
-                      }
-                    }
-                  ]
-                }
-              ],
-              config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                temperature: 0.0,
-                maxOutputTokens: 5000
-              }
-            });
-
-            break outerLoop;
-          } catch (err) {
-            lastError = err;
-            const msg = err?.message || String(err);
-            console.warn(`Attempt failed:`, msg);
-
-            const isOverloaded = msg.includes("503") || msg.includes("UNAVAILABLE") || msg.toLowerCase().includes("high demand");
-            const isQuota = msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota");
-
-            if (isOverloaded && attempt === 1) {
-              // Wait 1.5 seconds and retry the same model
-              await sleep(1500);
-              continue;
+    // Try keys with gemini-3.8-flash
+    for (const key of apiKeys) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: key });
+        response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: "Execute strict card grading inspection and output valid JSON." },
+                { inlineData: { mimeType: front.mimeType, data: front.data } },
+                { inlineData: { mimeType: back.mimeType, data: back.data } }
+              ]
             }
-
-            if (isOverloaded || isQuota) {
-              // Move to the next model / key
-              break; 
-            } else {
-              throw err;
-            }
+          ],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            temperature: 0.0,
+            maxOutputTokens: 5000
           }
-        }
+        });
+        if (response && response.text) break;
+      } catch (err) {
+        lastError = err;
+        console.error("Key attempt failed with error:", err?.message || err);
       }
     }
 
-    if (!response) {
-      throw lastError || new Error("All pooled keys and models are currently unavailable due to high demand or quota limits.");
+    if (!response || !response.text) {
+      throw lastError || new Error("All keys failed to return a response.");
     }
 
-    let text = response.text;
-    if (!text) {
-      throw new Error("Gemini returned an empty response.");
-    }
-
-    text = text.trim();
+    let text = response.text.trim();
     if (text.startsWith("```json")) {
       text = text.replace(/^```json/, "").replace(/```$/, "").trim();
     } else if (text.startsWith("```")) {
@@ -242,21 +196,7 @@ Return ONLY valid JSON matching this exact structure:
     return res.status(200).json(result);
 
   } catch (error) {
-    console.error("Vercel grading error:", error);
-    const errMessage = error?.message || "Internal server error.";
-
-    if (errMessage.includes("503") || errMessage.includes("UNAVAILABLE")) {
-      return res.status(503).json({
-        error: "The AI servers are experiencing temporary high demand spikes. Please click 'Analyze Card Condition' again in a few seconds."
-      });
-    }
-
-    if (errMessage.includes("429") || errMessage.includes("RESOURCE_EXHAUSTED")) {
-      return res.status(429).json({
-        error: "Free tier limits reached across your pooled keys. Please try again later."
-      });
-    }
-
-    return res.status(500).json({ error: errMessage });
+    console.error("Full server grading error:", error);
+    return res.status(500).json({ error: error?.message || "Internal server error." });
   }
 }

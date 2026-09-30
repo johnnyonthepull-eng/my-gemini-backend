@@ -36,33 +36,32 @@ export default async function handler(req, res) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are an elite, brutally strict master TCG authenticator and head grading director for PSA, BGS, and ACE. 
-Carefully examine the provided front and back images of THIS specific trading card. Apply professional industry-standard grading rigor without leniency. 
+    const promptText = `You are a forensic TCG grading scientist and senior authenticator operating with clinical, analytical precision. Your evaluations must read like an official laboratory condition report from PSA, BGS, or CGC. Avoid all vague language, fluff, or generic placeholders.
 
-STRICT GRADING RULES & PENALTIES:
-1. GEM MINT 10 REQUIREMENT: A Gem Mint 10 requires flawless sub-grades (centering 50/50 to 55/45, pristine uncompromised corners, zero edge silvering, and absolute zero surface flaws or print lines). Any flaw automatically locks the card out of a 10.
-2. SURFACE & PRINT LINE PENALTIES: Even a single faint print line, minor scratch, or texture disruption on the foil/holo layer immediately caps PSA/ACE at a maximum grade of 8 or 9, and pulls BGS Surface subgrade down to 8.0 or 8.5.
-3. CORNER & EDGE PENALTIES: Any micro-whitening, chipping, or corner softness on the back or front forces a strict grade reduction. Edge silvering or rough factory cuts must result in lower edge subgrades.
-4. DETAILED JUSTIFICATIONS: You must write extensive, thorough explanations for EVERY grade label, detailing exact micro-flaws observed and explaining precisely why the card achieved or failed to achieve higher tiers.
+ANALYTIC & CLINICAL PROTOCOLS:
+1. PRECISE MEASUREMENTS: Calculate front and back border widths down to the tenth of a millimeter (e.g., "1.9 mm") and compute precise centering ratios. If asymmetry exists, explicitly state the directional bias (e.g., "heavy top/left bias").
+2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect (e.g., "reverse top-left corner tip", "front right border center edge silvering", "central artwork horizontal refractive print line"). Never write "None detected" — every card possesses microscopic factory or handling characteristics that must be analyzed analytically.
+3. SUBGRADE MATHEMATICS: Provide rigorous, mathematically consistent sub-grades for Beckett (BGS) where Corners, Edges, Surface, and Centering dictate the final algorithmic convergence.
+4. RIGOROUS JUSTIFICATIONS: Link every grade ceiling directly to physical evidence observed under simulated magnification. Explain the exact mechanical tolerance failure that locks the card out of Gem Mint status.
 
 Return ONLY a valid JSON object matching this exact key structure:
 {
-  "cardName": "Exact character name or title visible on the card",
-  "setName": "Exact name of the expansion set",
+  "cardName": "Exact character name and designation",
+  "setName": "Exact expansion set name",
   "cardNumber": "Exact card number / set code",
   "rarity": "Exact rarity tier",
   "language": "Detected language",
   "variant": "Finish variant description",
-  "confidence": "99%",
+  "confidence": "99.8%",
   "psaGrade": "8",
-  "psaLabel": "Exhaustive breakdown explaining why it is capped at this grade, detailing specific surface and corner limitations.",
+  "psaLabel": "Clinical breakdown citing specific tolerance deviations and microscopic surface/corner restrictions.",
   "bgsGrade": "8.5",
   "bgsSubgrades": "C: 9.5 | Cr: 8.5 | E: 9.0 | S: 8.0",
   "aceGrade": "8",
-  "aceLabel": "Strict breakdown detailing why modern factory/wear defects restricted this card from Gem Mint status.",
+  "aceLabel": "Analytical assessment detailing structural and finish limitations.",
   "recGrade": "PSA",
-  "recLabel": "Comprehensive strategic rationale advising whether to grade or keep raw based on current market liquidity vs. condition penalties.",
-  "conditionSummary": "A comprehensive, highly detailed professional paragraph evaluating the card's overall eye appeal, structural integrity, and exact reasonings why higher tier grades are unreachable.",
+  "recLabel": "Strategic market liquidity vs. condition penalty analysis.",
+  "conditionSummary": "An exhaustive, highly analytical paragraph detailing the card's micro-structural integrity, factory finish characteristics, and the exact clinical reasons capping its maximum grade.",
   "frontTop": "1.9 mm",
   "frontBottom": "2.1 mm",
   "frontLeft": "2.2 mm",
@@ -73,9 +72,9 @@ Return ONLY a valid JSON object matching this exact key structure:
   "backLeft": "2.0 mm",
   "backRight": "2.4 mm",
   "backRatio": "45/55",
-  "cornerFlaws": "Exhaustive description of corner wear, micro-whitening, or fiber softness across all 4 corners.",
-  "edgeFlaws": "Exhaustive description of edge silvering, rough cuts, or chipping on front and back boundaries.",
-  "surfaceFlaws": "Exhaustive description of surface gloss integrity, print lines, hairline scratches, or foil disruptions."
+  "cornerFlaws": "Precise analytical breakdown of all 4 corners, specifying fiber compression, microscopic whitening, or die-cut sharpness.",
+  "edgeFlaws": "Precise analytical breakdown of border edges, detailing factory knife track marks, silvering, or micro-chipping.",
+  "surfaceFlaws": "Precise analytical breakdown of foil sheen, texture alignment, microscopic hairline scuffs, or refractive print lines."
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {

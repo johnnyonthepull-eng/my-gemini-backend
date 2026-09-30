@@ -34,39 +34,41 @@ export default async function handler(req, res) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `CRITICAL INSTRUCTIONS: Look closely at the attached front and back trading card images. You MUST extract real data. Do NOT return blank values, dashes, or placeholders. If you are unsure, make your best expert estimation.
+    const promptText = `CRITICAL INSTRUCTIONS: You are an elite TCG card authenticator and professional grader for PSA, BGS, and ACE. You MUST analyze the attached front and back card images thoroughly. Do NOT return blank values, dashes, placeholders, or generic text. Every single field below must be populated with specific, accurate data derived directly from the card.
+
+For all visual diagnostic border fields (top, bottom, left, right), you MUST estimate the physical border width in millimeters (mm) (e.g., "1.5 mm", "2.0 mm") assuming standard trading card dimensions (\(63 \times 88\text{ mm}\)).
 
 Return ONLY a valid JSON object matching this exact structure:
 {
-  "cardName": "Name of the character or subject",
-  "setName": "Name of the expansion set",
-  "cardNumber": "Card number string (e.g. 025/198)",
+  "cardName": "Exact character name or title of the card",
+  "setName": "Exact name of the expansion set",
+  "cardNumber": "Card number / set code (e.g. 025/198)",
   "rarity": "Rarity tier (e.g. Illustration Rare, Holofoil, Secret Rare)",
-  "language": "Language (e.g. English, Japanese, Simplified Chinese)",
-  "variant": "Finish variant (e.g. Holofoil, Reverse Holo, Normal, Master Ball)",
+  "language": "Language of the card (e.g. English, Japanese, Simplified Chinese)",
+  "variant": "Finish variant (e.g. Holofoil, Reverse Holo, Normal, Poké Ball Holo)",
   "confidence": "High",
   "psaGrade": "Estimated PSA Grade (e.g. PSA 9 or PSA 10)",
-  "psaLabel": "Brief note on PSA condition",
-  "bgsGrade": "Estimated BGS Grade (e.g. 9.5)",
-  "bgsSubgrades": "C: 9.5 | Cr: 9.5 | E: 9.5 | S: 9.5",
+  "psaLabel": "Detailed breakdown of condition justifying the PSA estimate",
+  "bgsGrade": "Estimated BGS Grade (e.g. 9.5 or 9)",
+  "bgsSubgrades": "C: 9.5 | Cr: 9.5 | E: 9.5 | S: 9.0",
   "aceGrade": "Estimated ACE Grade (e.g. 10)",
-  "aceLabel": "Brief note on ACE condition",
+  "aceLabel": "Detailed breakdown of condition justifying the ACE estimate",
   "recGrade": "PSA",
-  "recLabel": "Recommended grading house rationale",
-  "conditionSummary": "Detailed description of overall condition based on front and back visuals.",
-  "frontTop": "48%",
-  "frontBottom": "52%",
-  "frontLeft": "50%",
-  "frontRight": "50%",
-  "frontRatio": "50/50",
-  "backTop": "50%",
-  "backBottom": "50%",
-  "backLeft": "49%",
-  "backRight": "51%",
-  "backRatio": "50/50",
-  "cornerFlaws": "Describe corner condition or state clean",
-  "edgeFlaws": "Describe edge condition or state clean",
-  "surfaceFlaws": "Describe surface condition or state clean"
+  "recLabel": "Rationale for why this grading house is optimal",
+  "conditionSummary": "Comprehensive professional summary of the card's overall condition, centering, and eye appeal.",
+  "frontTop": "e.g. 1.8 mm",
+  "frontBottom": "e.g. 2.2 mm",
+  "frontLeft": "e.g. 2.0 mm",
+  "frontRight": "e.g. 2.0 mm",
+  "frontRatio": "e.g. 48/52",
+  "backTop": "e.g. 2.0 mm",
+  "backBottom": "e.g. 2.0 mm",
+  "backLeft": "e.g. 1.5 mm",
+  "backRight": "e.g. 2.5 mm",
+  "backRatio": "e.g. 40/60",
+  "cornerFlaws": "Detailed description of all 4 corners (e.g. Clean, minor whitening on bottom-left rear)",
+  "edgeFlaws": "Detailed description of edge condition (e.g. Clean front edges, minor silvering on rear top edge)",
+  "surfaceFlaws": "Detailed description of surface condition (e.g. Clean gloss, no scratches or print lines)"
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {

@@ -1,56 +1,42 @@
 import { GoogleGenAI } from "@google/genai";
 
-export const config = {
-  api: {
-    bodyParser: false, // Disables default parser to manually handle raw stream safely
-  },
-};
-
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Credentials", true);
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,OPTIONS,PATCH,DELETE,POST,PUT"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
-  );
+export const config = {
+  runtime: "edge", // Uses the Edge runtime to support streaming and bypass standard body size limitations
+};
 
+export default async function handler(req) {
+  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    res.status(200).end();
-    return;
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    });
   }
 
   try {
-    // Manually read the incoming request stream chunks
-    const buffers = [];
-    for await (const chunk of req) {
-      buffers.push(chunk);
-    }
-    const rawBody = Buffer.concat(buffers).toString("utf8");
-    
-    let body;
-    try {
-      body = JSON.parse(rawBody);
-    } catch (err) {
-      return res.status(400).json({ error: "Invalid JSON payload sent to server." });
-    }
-
-    const frontImage = body?.frontImage;
-    const backImage = body?.backImage;
+    const body = await req.json();
+    const { frontImage, backImage } = body;
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({ error: "Missing front or back image." });
+      return new Response(JSON.stringify({ error: "Missing front or back image." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      });
     }
 
     function parseDataUrl(dataUrl) {
@@ -154,11 +140,18 @@ You must return a valid JSON object ONLY, with no markdown code block formatting
 
     const parsedData = JSON.parse(cleanJsonStr);
 
-    return res.status(200).json(parsedData);
+    return new Response(JSON.stringify(parsedData), {
+      status: 200,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    });
   } catch (error) {
     console.error("Grading API error:", error);
-    return res.status(500).json({
-      error: error.message || "Internal server error during card analysis.",
-    });
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal server error during card analysis." }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      }
+    );
   }
 }

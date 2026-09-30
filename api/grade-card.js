@@ -32,10 +32,10 @@ export default async function handler(req, res) {
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
 
-    // Updated to the current Gemini 3.8 Flash model endpoint
+    // Using Gemini 3.8 Flash vision endpoint
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `Analyze these front and back card images with 100% precision. Ignore condition or wear—focus purely on identifying the card. 
+    const promptText = `You are a professional trading card grader and archivist. Perform a rigorous condition and authenticity analysis on these front and back card images. 
 
 Provide your response in strict JSON format with these exact keys:
 {
@@ -45,8 +45,13 @@ Provide your response in strict JSON format with these exact keys:
   "rarity": "Rarity tier (e.g. Illustration Rare, Ultra Rare)",
   "language": "Language of the card",
   "variantType": "Holo pattern, reverse holo, promo, etc.",
+  "estimatedGrade": "Estimated grade range (e.g. PSA 9-10, Mint, Near Mint, Lightly Played)",
+  "centering": "Analysis of front/back centering borders (e.g. 50/50, slight left bias)",
+  "corners": "Condition breakdown of all 4 corners (whitening, dings, clean)",
+  "edges": "Condition breakdown of the edges (silvering, chipping, clean)",
+  "surface": "Surface condition check (scratches, print lines, holo scuffs)",
   "extractedText": "Key text or attacks visible on the card",
-  "additionalDetails": "Any unique markers or copyright info"
+  "additionalDetails": "Any unique markers, centering notes, or flaws"
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {

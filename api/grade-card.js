@@ -44,12 +44,19 @@ export default async function handler(req, res) {
   }
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
-    }
+    // Gather all 5 API keys from Vercel environment variables
+    const apiKeys = [
+      process.env.GEMINI_API_KEY_1,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3,
+      process.env.GEMINI_API_KEY_4,
+      process.env.GEMINI_API_KEY_5,
+      process.env.GEMINI_API_KEY
+    ].filter(Boolean);
 
-    const ai = new GoogleGenAI({ apiKey });
+    if (apiKeys.length === 0) {
+      throw new Error("No GEMINI_API_KEY environment variables found on Vercel.");
+    }
 
     const body = req.body || {};
     const frontImage = body.frontImage || body.frontBase64;
@@ -142,69 +149,70 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    // Rotate through multiple active flash models to bypass single-model quota caps
     const modelsToTry = ["gemini-3.8-flash", "gemini-3.5-flash"];
     let response = null;
     let lastError = null;
 
-    for (const model of modelsToTry) {
-      try {
-        console.log(`Trying model: ${model}`);
-        response = await ai.models.generateContent({
-          model,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
-                },
-                {
-                  inlineData: {
-                    mimeType: front.mimeType,
-                    data: front.data
+    // Loop through all 5 keys and models
+    outerLoop: for (const key of apiKeys) {
+      const ai = new GoogleGenAI({ apiKey: key });
+
+      for (const model of modelsToTry) {
+        try {
+          console.log(`Trying model ${model} with key pool...`);
+          response = await ai.models.generateContent({
+            model,
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
+                  },
+                  {
+                    inlineData: {
+                      mimeType: front.mimeType,
+                      data: front.data
+                    }
+                  },
+                  {
+                    inlineData: {
+                      mimeType: back.mimeType,
+                      data: back.data
+                    }
                   }
-                },
-                {
-                  inlineData: {
-                    mimeType: back.mimeType,
-                    data: back.data
-                  }
-                }
-              ]
+                ]
+              }
+            ],
+            config: {
+              systemInstruction,
+              responseMimeType: "application/json",
+              temperature: 0.0,
+              maxOutputTokens: 5000
             }
-          ],
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            temperature: 0.0,
-            maxOutputTokens: 5000
+          });
+
+          break outerLoop;
+        } catch (err) {
+          lastError = err;
+          const msg = err?.message || String(err);
+          console.warn(`Attempt failed:`, msg);
+
+          if (
+            msg.includes("429") ||
+            msg.includes("RESOURCE_EXHAUSTED") ||
+            msg.includes("quota")
+          ) {
+            continue; // Try next model or next key
+          } else {
+            throw err;
           }
-        });
-
-        // If successful, break out of the loop
-        break;
-      } catch (err) {
-        lastError = err;
-        const errorMessage = err?.message || String(err);
-        console.warn(`Model ${model} failed:`, errorMessage);
-
-        // If quota exceeded (429), catch it and try the next model in the list
-        if (
-          errorMessage.includes("429") ||
-          errorMessage.includes("RESOURCE_EXHAUSTED") ||
-          errorMessage.includes("quota")
-        ) {
-          continue;
-        } else {
-          // If it's a different error, throw immediately
-          throw err;
         }
       }
     }
 
     if (!response) {
-      throw lastError || new Error("All available models have exhausted their free tier quotas.");
+      throw lastError || new Error("All pooled keys and models have exhausted their daily quotas.");
     }
 
     let text = response.text;
@@ -232,7 +240,7 @@ Return ONLY valid JSON matching this exact structure:
       errMessage.includes("quota")
     ) {
       return res.status(429).json({
-        error: "Free tier request limits reached across all models. Please link billing in Google AI Studio to increase your limits."
+        error: "All free tier limits across your 5 keys have been reached for today. Try again tomorrow!"
       });
     }
 

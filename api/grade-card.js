@@ -151,12 +151,12 @@ Return ONLY valid JSON matching this exact structure:
     let response = null;
     let lastError = null;
 
-    // Utilize gemini-1.5-flash which provides a 1,500 request daily free-tier quota pool
+    // Use gemini-flash-latest which resolves seamlessly across the developer API
     for (const key of apiKeys) {
       try {
         const ai = new GoogleGenAI({ apiKey: key });
         response = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
+          model: "gemini-flash-latest",
           contents: [
             {
               role: "user",

@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     const { frontImage, backImage } = req.body || {};
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({ error: "Missing frontImage or backImage payload in request body." });
+      return res.status(400).json({ error: "Missing frontImage or backImage payload." });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -24,7 +24,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
     }
 
-    // Helper to strip data URL prefix
     const cleanBase64 = (dataUrl) => {
       if (typeof dataUrl !== 'string') return '';
       const parts = dataUrl.split(",");
@@ -34,8 +33,8 @@ export default async function handler(req, res) {
     const frontBase64Data = cleanBase64(frontImage);
     const backBase64Data = cleanBase64(backImage);
 
-    // Using gemini-2.5-flash for stable vision support
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Using gemini-2.0-flash which is widely supported for REST API vision
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const promptText = `Analyze these front and back card images with 100% precision. Ignore condition or wear—focus purely on identifying the card. 
 
@@ -82,14 +81,15 @@ Provide your response in strict JSON format with these exact keys:
     const responseText = await geminiResponse.text();
 
     if (!geminiResponse.ok) {
-      return res.status(502).json({ error: `Gemini API returned status \({geminiResponse.status}:\){responseText}` });
+      console.error("Gemini API rejected request:", responseText);
+      return res.status(502).json({ error: `Google API Error (\({geminiResponse.status}):\){responseText}` });
     }
 
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseErr) {
-      return res.status(500).json({ error: "Failed to parse JSON response from Gemini API." });
+      return res.status(500).json({ error: "Failed to parse JSON response from Gemini." });
     }
 
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -97,14 +97,13 @@ Provide your response in strict JSON format with these exact keys:
       return res.status(500).json({ error: "No text generated from the Gemini model." });
     }
 
-    // Clean markdown blocks if present
     const cleanJsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsedCardData = JSON.parse(cleanJsonString);
 
     return res.status(200).json(parsedCardData);
 
   } catch (error) {
-    console.error("Critical serverless catch:", error);
-    return res.status(500).json({ error: error.message || "Internal server crash during card analysis." });
+    console.error("Server catch error:", error);
+    return res.status(500).json({ error: error.message || "Internal server crash." });
   }
 }

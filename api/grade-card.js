@@ -1,11 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Increase Vercel function body size limit for large image uploads
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: "10mb",
-    },
+    bodyParser: false, // Disables default parser to manually handle raw stream safely
   },
 };
 
@@ -35,10 +32,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ensure body is parsed if sent as raw text or stream
-    let body = req.body;
-    if (typeof body === "string") {
-      body = JSON.parse(body);
+    // Manually read the incoming request stream chunks
+    const buffers = [];
+    for await (const chunk of req) {
+      buffers.push(chunk);
+    }
+    const rawBody = Buffer.concat(buffers).toString("utf8");
+    
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid JSON payload sent to server." });
     }
 
     const frontImage = body?.frontImage;

@@ -34,42 +34,45 @@ export default async function handler(req, res) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
-    const promptText = `You are an elite, strict professional trading card authenticator and grader (PSA, BGS, ACE). 
-Analyze the provided front and back card images with maximum depth and precision. 
+    const promptText = `You are a master TCG authenticator and professional grading director for PSA, BGS, and ACE. Analyze the uploaded front and back images of THIS specific trading card. Do not generalize. Extract exact details.
 
-CRITICAL: Return ONLY a valid JSON object. Do NOT wrap it in markdown code blocks like \`\`\`json. Return raw JSON text only.
-Every single key listed below must be filled with a real, comprehensive evaluation. No dashes ("—"), no blanks, no placeholders.
+MANDATORY RULES:
+1. Identify the exact card name, expansion set, card number, rarity, language, and finish variant visible in the images.
+2. Perform a strict condition audit. Provide realistic estimated grades for PSA, BGS, and ACE based on visible wear.
+3. For visual diagnostics, estimate the physical border widths in millimeters (mm) to one decimal place (e.g., "1.8 mm", "2.2 mm") for the top, bottom, left, and right of both the front and back images, assuming standard trading card dimensions (63x88mm).
+4. NEVER return dashes ("—"), empty strings, or placeholders. Every property must contain a precise, custom description generated specifically for this card.
 
+Return ONLY a valid JSON object matching this exact key structure:
 {
-  "cardName": "Exact character name or title of the card",
-  "setName": "Exact name of the expansion set",
-  "cardNumber": "Card number / set code (e.g. 157/128)",
-  "rarity": "Rarity tier (e.g. Special Illustration Rare, Holofoil)",
-  "language": "Language of the card (e.g. English)",
-  "variant": "Finish variant (e.g. Rainbow Sheen Holofoil)",
+  "cardName": "Exact name of this specific card",
+  "setName": "Exact expansion set name",
+  "cardNumber": "Exact card number / set code (e.g. 025/198)",
+  "rarity": "Exact rarity tier",
+  "language": "Detected language (e.g. English, Japanese)",
+  "variant": "Finish variant (e.g. Holofoil, Reverse Holo, Normal)",
   "confidence": "High",
-  "psaGrade": "Estimated PSA Grade (e.g. PSA 9)",
-  "psaLabel": "Detailed breakdown justifying the PSA estimate based on corners and surface",
-  "bgsGrade": "Estimated BGS Grade (e.g. 9.0)",
-  "bgsSubgrades": "C: 9.0 | Cr: 9.0 | E: 9.5 | S: 9.0",
-  "aceGrade": "Estimated ACE Grade (e.g. 9)",
-  "aceLabel": "Detailed breakdown justifying the ACE estimate",
+  "psaGrade": "Estimated PSA Grade (e.g. PSA 9 or PSA 10)",
+  "psaLabel": "Specific condition breakdown for PSA",
+  "bgsGrade": "Estimated BGS Grade (e.g. 9.5)",
+  "bgsSubgrades": "C: 9.5 | Cr: 9.0 | E: 9.5 | S: 9.0",
+  "aceGrade": "Estimated ACE Grade (e.g. 10)",
+  "aceLabel": "Specific condition breakdown for ACE",
   "recGrade": "PSA",
-  "recLabel": "Rationale for why this grading house is optimal",
-  "conditionSummary": "Comprehensive professional summary of overall condition, centering, and eye appeal.",
-  "frontTop": "1.8 mm",
-  "frontBottom": "2.0 mm",
-  "frontLeft": "1.9 mm",
-  "frontRight": "1.9 mm",
-  "frontRatio": "50/50",
-  "backTop": "2.1 mm",
-  "backBottom": "1.9 mm",
-  "backLeft": "1.5 mm",
-  "backRight": "2.5 mm",
-  "backRatio": "45/55",
-  "cornerFlaws": "Detailed description of all 4 corners and any wear",
-  "edgeFlaws": "Detailed description of front and back edges and any wear",
-  "surfaceFlaws": "Detailed description of surface gloss, scratches, or print lines"
+  "recLabel": "Specific recommendation rationale for this card",
+  "conditionSummary": "Detailed custom paragraph summarizing this specific card's overall condition and eye appeal.",
+  "frontTop": "e.g. 1.8 mm",
+  "frontBottom": "e.g. 2.0 mm",
+  "frontLeft": "e.g. 1.9 mm",
+  "frontRight": "e.g. 1.9 mm",
+  "frontRatio": "e.g. 50/50",
+  "backTop": "e.g. 2.1 mm",
+  "backBottom": "e.g. 1.9 mm",
+  "backLeft": "e.g. 1.5 mm",
+  "backRight": "e.g. 2.5 mm",
+  "backRatio": "e.g. 45/55",
+  "cornerFlaws": "Custom description of all 4 corners observed on this card",
+  "edgeFlaws": "Custom description of front and back edges observed on this card",
+  "surfaceFlaws": "Custom description of surface gloss, scratches, or print lines observed on this card"
 }`;
 
     const geminiResponse = await fetch(geminiUrl, {
@@ -88,7 +91,7 @@ Every single key listed below must be filled with a real, comprehensive evaluati
           }
         ],
         generationConfig: {
-          temperature: 0.2
+          temperature: 0.1
         }
       })
     });
@@ -112,7 +115,6 @@ Every single key listed below must be filled with a real, comprehensive evaluati
       return res.status(500).json({ error: "No text generated from the Gemini model." });
     }
 
-    // Clean any potential code block syntax safely
     const cleanJsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
     let parsedCardData;
     
@@ -123,50 +125,7 @@ Every single key listed below must be filled with a real, comprehensive evaluati
       return res.status(500).json({ error: "Model failed to output clean JSON structure." });
     }
 
-    // SERVER-SIDE SELF-HEALING FALLBACK: Guarantee zero blanks or dashes
-    const defaults = {
-      cardName: "Mewtwo ex (Custom Concept)",
-      setName: "Custom 30th Anniversary Concept",
-      cardNumber: "157/128",
-      rarity: "Special Illustration Rare",
-      language: "English",
-      variant: "Rainbow Sheen Holofoil",
-      confidence: "High",
-      psaGrade: "PSA 9",
-      psaLabel: "Minor edge chipping on reverse top edge, clean front surface.",
-      bgsGrade: "9.0",
-      bgsSubgrades: "C: 9.0 | Cr: 9.0 | E: 9.5 | S: 9.0",
-      aceGrade: "9",
-      aceLabel: "Solid alignment with minor back centering variance.",
-      recGrade: "PSA",
-      recLabel: "Best market liquidity for custom or modern high-tier holo prints.",
-      conditionSummary: "The card displays vibrant holo reflection and strong structural preservation with minor rear boundary shifts.",
-      frontTop: "1.8 mm",
-      frontBottom: "2.0 mm",
-      frontLeft: "1.9 mm",
-      frontRight: "1.9 mm",
-      frontRatio: "50/50",
-      backTop: "2.1 mm",
-      backBottom: "1.9 mm",
-      backLeft: "1.5 mm",
-      backRight: "2.5 mm",
-      backRatio: "45/55",
-      cornerFlaws: "Sharp corners with very light micro-whitening visible on bottom-left rear.",
-      edgeFlaws: "Clean front borders; minor silvering traces along upper rear edge boundary.",
-      surfaceFlaws: "Glossy finish intact with clean presentation and no heavy scratches or print lines."
-    };
-
-    const finalData = {};
-    for (const key of Object.keys(defaults)) {
-      const val = parsedCardData[key];
-      if (!val || val === "—" || val.toString().trim() === "" || val.toString().trim() === "—") {
-        finalData[key] = defaults[key];
-      } else {
-        finalData[key] = val;
-      }
-    }
-
-    return res.status(200).json(finalData);
+    return res.status(200).json(parsedCardData);
 
   } catch (error) {
     console.error("Server catch error:", error);

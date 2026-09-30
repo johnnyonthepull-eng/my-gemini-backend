@@ -4,10 +4,9 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
-
-/* ==========================================================================
-   RETRY WRAPPER
-   ========================================================================== */
+/* ============================================================
+   GEMINI RETRY WRAPPER
+============================================================ */
 
 async function generateWithRetry(
   params,
@@ -16,27 +15,22 @@ async function generateWithRetry(
 ) {
   try {
     return await ai.models.generateContent(params);
-
   } catch (err) {
+    const message = String(err?.message || "").toLowerCase();
 
-    const message =
-      String(err?.message || "").toLowerCase();
-
-    const isRetryable =
+    const retryable =
       err?.status === 429 ||
       err?.status === 500 ||
       err?.status === 502 ||
       err?.status === 503 ||
       message.includes("503") ||
       message.includes("overloaded") ||
-      message.includes("temporarily unavailable") ||
-      message.includes("rate limit");
+      message.includes("rate limit") ||
+      message.includes("temporarily unavailable");
 
-    if (retries > 0 && isRetryable) {
-
+    if (retryable && retries > 0) {
       console.warn(
-        `Gemini busy/error. Retrying in ${delay}ms... ` +
-        `(${retries} attempts left)`
+        `Gemini temporarily unavailable. Retrying in ${delay}ms...`
       );
 
       await new Promise(resolve =>
@@ -55,12 +49,11 @@ async function generateWithRetry(
 }
 
 
-/* ==========================================================================
+/* ============================================================
    CORS
-   ========================================================================== */
+============================================================ */
 
 function setCors(res) {
-
   res.setHeader(
     "Access-Control-Allow-Credentials",
     "true"
@@ -83,9 +76,9 @@ function setCors(res) {
 }
 
 
-/* ==========================================================================
+/* ============================================================
    MAIN VERCEL HANDLER
-   ========================================================================== */
+============================================================ */
 
 export default async function handler(req, res) {
 
@@ -101,25 +94,16 @@ export default async function handler(req, res) {
     });
   }
 
-
   try {
 
     const {
       frontBase64,
       backBase64,
-
       frontMimeType = "image/jpeg",
       backMimeType = "image/jpeg"
-
     } = req.body || {};
 
-
-    /* ----------------------------------------------------------------------
-       Validate images
-       ---------------------------------------------------------------------- */
-
     if (!frontBase64 || !backBase64) {
-
       return res.status(400).json({
         error:
           "Missing front or back image payload."
@@ -127,17 +111,11 @@ export default async function handler(req, res) {
     }
 
 
-    /* ----------------------------------------------------------------------
-       STEP 1
-       Gemini identifies and grades the card
-       ---------------------------------------------------------------------- */
+    /* ========================================================
+       GEMINI CARD ANALYSIS
+    ======================================================== */
 
-    console.log(
-      "Starting Gemini card identification and condition analysis..."
-    );
-
-
-    const aiAnalysis =
+    const analysis =
       await analyseCardWithGemini({
         frontBase64,
         backBase64,
@@ -146,87 +124,72 @@ export default async function handler(req, res) {
       });
 
 
-    /* ----------------------------------------------------------------------
-       STEP 2
-       Look up current PulseTCG data
-       ---------------------------------------------------------------------- */
-
-    console.log(
-      "Looking up PulseTCG pricing..."
-    );
-
+    /* ========================================================
+       PULSETCG PRICE LOOKUP
+    ======================================================== */
 
     const pulsePrices =
       await getPulseTCGPrices(
-        aiAnalysis.cardIdentification,
-        aiAnalysis.companyPredictions
+        analysis.cardIdentification,
+        analysis.companyPredictions
       );
 
 
-    /* ----------------------------------------------------------------------
-       STEP 3
-       Calculate grading economics
-       ---------------------------------------------------------------------- */
+    /* ========================================================
+       VALUE COMPARISON
+    ======================================================== */
 
     const gradingEconomics =
       calculateGradingEconomics({
         predictions:
-          aiAnalysis.companyPredictions,
+          analysis.companyPredictions,
 
         pulsePrices
       });
 
 
-    /* ----------------------------------------------------------------------
-       STEP 4
-       Generate value-aware recommendation
-       ---------------------------------------------------------------------- */
-
-    console.log(
-      "Generating value-aware grading recommendation..."
-    );
-
+    /* ========================================================
+       FINAL RECOMMENDATION
+    ======================================================== */
 
     const recommendation =
       await createValueRecommendation({
 
         card:
-          aiAnalysis.cardIdentification,
+          analysis.cardIdentification,
 
         predictions:
-          aiAnalysis.companyPredictions,
+          analysis.companyPredictions,
 
         diagnostics:
-          aiAnalysis.subgrades,
+          analysis.subgrades,
 
         gradeSummary:
-          aiAnalysis.gradeSummary,
+          analysis.gradeSummary,
 
         pulsePrices,
 
         gradingEconomics
-
       });
 
 
-    /* ----------------------------------------------------------------------
-       STEP 5
-       Return complete response
-       ---------------------------------------------------------------------- */
+    /* ========================================================
+       RETURN EVERYTHING TO FRONTEND
+    ======================================================== */
 
     return res.status(200).json({
 
       cardIdentification:
-        aiAnalysis.cardIdentification,
+        analysis.cardIdentification,
 
       companyPredictions:
-        aiAnalysis.companyPredictions,
+        analysis.companyPredictions,
 
       subgrades:
-        aiAnalysis.subgrades,
+        analysis.subgrades,
 
       gradeSummary:
-        aiAnalysis.gradeSummary,
+        analysis.gradeSummary,
 
       pulsePrices,
 
@@ -236,7 +199,6 @@ export default async function handler(req, res) {
 
     });
 
-
   } catch (err) {
 
     console.error(
@@ -244,275 +206,303 @@ export default async function handler(req, res) {
       err
     );
 
-
     return res.status(500).json({
-
       error:
         err?.message ||
         "Internal server error processing card."
-
     });
-
   }
 }
 
 
-/* ==========================================================================
+/* ============================================================
    GEMINI CARD ANALYSIS
-   ========================================================================== */
+============================================================ */
 
 async function analyseCardWithGemini({
-
   frontBase64,
   backBase64,
   frontMimeType,
   backMimeType
-
 }) {
-
 
   const gradingSystemInstruction = `
 
-You are an expert trading card identification and condition
-pre-screening AI.
+You are an expert trading card identification,
+condition analysis and grading pre-screening AI.
 
 You are analysing two photographs:
 
 IMAGE 1 = FRONT OF CARD
 IMAGE 2 = BACK OF CARD
 
+IMPORTANT:
 
-============================================================
-IMPORTANT LIMITATIONS
-============================================================
+This is an estimated pre-screening result.
 
-You are performing a visual pre-screen only.
+You are NOT an official PSA, BGS or ACE grader.
 
-DO NOT claim that the result is an official PSA, BGS or ACE grade.
+Never claim that your result is an official grade.
 
-DO NOT claim 100% certainty.
+Never claim 100% certainty.
 
-DO NOT claim that you actually used infrared hardware,
-ultraviolet hardware, blue-light hardware, microscopes,
-or physical measurement equipment.
+Never claim that you physically used infrared,
+ultraviolet, blue-light equipment, microscopes,
+or physical measuring equipment.
 
-DO NOT invent information that cannot be seen.
+Only report defects that can reasonably be inferred
+from the supplied photographs.
 
-If something cannot be determined from the photographs,
-say "Unknown" or describe the uncertainty.
+If something cannot be reliably seen, say so.
 
-Do not turn an estimated visual measurement into an
-exact physical millimetre measurement.
+DO NOT INVENT CARD INFORMATION.
 
-Centering may be estimated from visible borders as a ratio
-or approximate percentage.
-
-Example:
-
-"Approximately 55/45 left-right, 50/50 top-bottom."
-
-If the card edges are not sufficiently visible to estimate
-centering, say so.
+DO NOT INVENT MARKET PRICES.
 
 
 ============================================================
-1. CARD IDENTIFICATION
+CARD IDENTIFICATION
 ============================================================
 
-Identify as accurately as possible:
+Identify the card using both photographs.
 
-- card name
-- expansion/set name
+Return:
+
+- Card name
+- Set / expansion
+- Card number
+- Rarity
+- Language
+- Variant / finish
+
+Pay particular attention to:
+
 - card number
-- rarity
-- language
-- variant/finish where visible
-
-Use both front and back.
-
-Pay close attention to:
-
-- printed card number
-- set symbol
-- expansion logo
-- copyright line
-- language
-- holo/reverse holo/illustration rare/etc.
+- set symbols
+- expansion markings
 - promo markings
-- special variants
+- artwork
+- holo pattern
+- reverse holo
+- special illustration
+- language
+- variant markings
 
 
 ============================================================
-2. CENTERING
+CENTERING
 ============================================================
 
 Estimate:
 
 FRONT:
 
-- left/right
-- top/bottom
-- overall centering ratio
+- left/right centering
+- top/bottom centering
+- approximate overall ratio
 
 BACK:
 
-- left/right
-- top/bottom
-- overall centering ratio
+- left/right centering
+- top/bottom centering
+- approximate overall ratio
 
-Use visual estimates.
+Do NOT claim exact millimetre measurements.
 
-Do NOT claim exact millimetre accuracy.
+Photographs do not provide reliable physical millimetre
+measurements without a known reference scale.
 
-If a millimetre estimate is possible from known card dimensions,
-label it as APPROXIMATE.
+Use language such as:
 
-Never describe a photograph-derived measurement as exact.
+"Approximately 55/45 left-right and 50/50 top-bottom."
+
+If it cannot be reliably measured:
+
+"Not reliably measurable from supplied image."
 
 
 ============================================================
-3. CORNERS
+CORNERS
 ============================================================
 
-Inspect for visible:
+Look for visible:
 
 - whitening
 - rounding
 - chipping
 - dents
-- corner cuts
+- corner wear
 - fraying
-- bends
-- visible wear
-
-Only report defects that are reasonably visible.
+- cutting defects
 
 
 ============================================================
-4. EDGES
+EDGES
 ============================================================
 
-Inspect for:
+Look for visible:
 
 - whitening
-- edge chipping
+- chipping
 - silvering
 - rough cuts
-- print defects
 - edge dents
-- visible separation
-
-Again, do not invent microscopic defects.
+- edge wear
+- printing defects
 
 
 ============================================================
-5. SURFACE
+SURFACE
 ============================================================
 
-Inspect the supplied photographs for visible:
+Look for visible:
 
 - scratches
 - print lines
 - dents
 - creases
-- surface marks
 - holo scratches
-- texture abnormalities
-- print defects
-- staining
-- whitening
-
-If image resolution prevents reliable detection,
-say that the defect cannot be confirmed.
+- texture defects
+- stains
+- printing defects
 
 
 ============================================================
-6. PSA ESTIMATE
+PSA
 ============================================================
 
 Estimate the most likely PSA grade.
 
-Use conservative reasoning.
+Explain the reasoning.
 
-Possible grades may include:
+Consider:
 
-PSA 10
-PSA 9
-PSA 8
-PSA 7
-etc.
-
-Explain the main factors preventing a higher grade.
+- centering
+- corners
+- edges
+- surface
+- visible print quality
 
 
 ============================================================
-7. BGS ESTIMATE
+BGS
 ============================================================
 
-Estimate:
+Estimate BGS subgrades:
 
 - Centering
 - Corners
 - Edges
 - Surface
 
-Then estimate an overall BGS grade.
-
-The subgrades must be internally consistent with
-the overall prediction.
-
-Do not invent decimal precision that the images
-cannot support.
-
-
-============================================================
-8. ACE ESTIMATE
-============================================================
-
-Estimate the likely ACE grade based on the visible
-condition.
+Then estimate the overall BGS grade.
 
 Explain the reasoning.
 
 
 ============================================================
-9. OVERALL SUMMARY
+ACE
 ============================================================
 
-Give a concise but useful summary of:
+Estimate the likely ACE grade.
 
-- strongest condition characteristics
-- visible weaknesses
+Explain the reasoning.
+
+
+============================================================
+GRADE SUMMARY
+============================================================
+
+Write a useful summary explaining:
+
+- strongest aspects of the card
+- weakest aspects
 - biggest grading risk
-- image limitations
-- overall condition
+- overall apparent condition
+- limitations caused by photographs
 
 
 ============================================================
-10. CONFIDENCE
+CONFIDENCE
 ============================================================
 
-Give confidence separately for:
-
-- card identification
-- condition assessment
-- centering assessment
-- overall grading prediction
-
-Use:
+Provide confidence levels:
 
 High
 Medium
 Low
 
-Do not use fake numerical precision.
+for:
+
+- card identification
+- condition
+- centering
+- overall grade
 
 
 ============================================================
-RETURN FORMAT
+JSON
 ============================================================
 
-Return valid JSON only.
+Return VALID JSON ONLY.
+
+Use EXACTLY this structure:
+
+{
+  "cardIdentification": {
+    "cardName": "",
+    "setName": "",
+    "cardNumber": "",
+    "rarity": "",
+    "language": "",
+    "variant": "",
+    "identificationConfidence": ""
+  },
+
+  "companyPredictions": {
+
+    "PSA": {
+      "predictedGrade": "",
+      "reasoning": "",
+      "confidence": ""
+    },
+
+    "BGS": {
+      "predictedGrade": "",
+      "estimatedSubgrades": {
+        "centering": "",
+        "corners": "",
+        "edges": "",
+        "surface": ""
+      },
+      "reasoning": "",
+      "confidence": ""
+    },
+
+    "ACE": {
+      "predictedGrade": "",
+      "reasoning": "",
+      "confidence": ""
+    }
+
+  },
+
+  "subgrades": {
+
+    "centeringFront": "",
+
+    "centeringBack": "",
+
+    "cornersFlaws": [],
+
+    "edgesFlaws": [],
+
+    "surfaceFlaws": []
+
+  },
+
+  "gradeSummary": ""
+}
 
 `;
 
@@ -520,24 +510,13 @@ Return valid JSON only.
   const response =
     await generateWithRetry({
 
-      /*
-       * Keep your existing model if it is available
-       * in your Gemini account.
-       *
-       * You can override it through Vercel:
-       *
-       * GEMINI_MODEL=...
-       */
-
       model:
         process.env.GEMINI_MODEL ||
         "gemini-3.5-flash-lite",
 
-
       contents: [
 
         {
-
           role: "user",
 
           parts: [
@@ -549,15 +528,12 @@ Return valid JSON only.
 
             {
               inlineData: {
-
                 data:
                   frontBase64,
 
                 mimeType:
                   frontMimeType
-
               }
-
             },
 
             {
@@ -567,28 +543,23 @@ Return valid JSON only.
 
             {
               inlineData: {
-
                 data:
                   backBase64,
 
                 mimeType:
                   backMimeType
-
               }
-
             },
 
             {
               text:
-                "Analyse both images and return the requested JSON."
+                "Analyse both images and return the requested JSON report."
             }
 
           ]
-
         }
 
       ],
-
 
       config: {
 
@@ -609,79 +580,53 @@ Return valid JSON only.
   const responseText =
     response.text;
 
-
   if (!responseText) {
-
     throw new Error(
       "Gemini returned an empty response."
     );
-
   }
 
 
-  let data;
-
   try {
 
-    data =
-      JSON.parse(responseText);
+    return JSON.parse(
+      responseText
+    );
 
   } catch (err) {
 
     console.error(
-      "Gemini returned invalid JSON:",
+      "Invalid Gemini JSON:",
       responseText
     );
 
     throw new Error(
       "Gemini returned invalid JSON."
     );
-
   }
-
-
-  /*
-   * Add defaults to prevent the frontend
-   * from breaking if a field is missing.
-   */
-
-  data.cardIdentification =
-    data.cardIdentification || {};
-
-  data.companyPredictions =
-    data.companyPredictions || {};
-
-  data.subgrades =
-    data.subgrades || {};
-
-  data.gradeSummary =
-    data.gradeSummary || "";
-
-
-  return data;
 }
 
 
-/* ==========================================================================
-   PULSE TCG PRICE LOOKUP
-   ==========================================================================
+/* ============================================================
+   PULSETCG PRICE LOOKUP
+============================================================ */
 
+/*
    IMPORTANT:
 
-   PulseTCG's public website exposes current UK market data and
-   graded-card prices, but I could not verify a public documented
-   API endpoint.
+   This function is ready for a real PulseTCG API.
 
-   Therefore this function deliberately does NOT invent an endpoint.
+   DO NOT put a made-up PulseTCG URL here.
 
-   Configure one of the following:
+   Once you have the actual PulseTCG API endpoint,
+   add it in Vercel Environment Variables as:
 
    PULSE_API_URL
+
+   And, if required:
+
    PULSE_API_KEY
-
-   when you have legitimate API access/documentation from PulseTCG.
-
-   ========================================================================== */
+*/
 
 async function getPulseTCGPrices(
   card,
@@ -692,25 +637,15 @@ async function getPulseTCGPrices(
     new Date().toISOString();
 
 
-  /*
-   * No API configured.
-   *
-   * We explicitly return unavailable rather than allowing Gemini
-   * to fabricate a market value.
-   */
+  /* ----------------------------------------------------------
+     NO API CONFIGURED
+  ---------------------------------------------------------- */
 
   if (!process.env.PULSE_API_URL) {
 
-    console.warn(
-      "PULSE_API_URL is not configured. " +
-      "Returning unavailable PulseTCG prices."
-    );
-
-
     return {
 
-      live:
-        false,
+      live: false,
 
       source:
         "PulseTCG",
@@ -723,7 +658,8 @@ async function getPulseTCGPrices(
       PSA: {
 
         grade:
-          predictions?.PSA?.predictedGrade || null,
+          predictions?.PSA?.predictedGrade ||
+          null,
 
         price:
           null,
@@ -736,7 +672,8 @@ async function getPulseTCGPrices(
       BGS: {
 
         grade:
-          predictions?.BGS?.predictedGrade || null,
+          predictions?.BGS?.predictedGrade ||
+          null,
 
         price:
           null,
@@ -749,7 +686,8 @@ async function getPulseTCGPrices(
       ACE: {
 
         grade:
-          predictions?.ACE?.predictedGrade || null,
+          predictions?.ACE?.predictedGrade ||
+          null,
 
         price:
           null,
@@ -763,12 +701,9 @@ async function getPulseTCGPrices(
   }
 
 
-  /*
-   * Search parameters.
-   *
-   * These should match whatever official Pulse API
-   * endpoint you are given.
-   */
+  /* ----------------------------------------------------------
+     SEARCH PARAMETERS
+  ---------------------------------------------------------- */
 
   const params =
     new URLSearchParams({
@@ -786,16 +721,17 @@ async function getPulseTCGPrices(
         card?.rarity || "",
 
       language:
-        card?.language || ""
+        card?.language || "",
+
+      variant:
+        card?.variant || ""
 
     });
 
 
   const headers = {
-
-    Accept:
+    "Accept":
       "application/json"
-
   };
 
 
@@ -807,13 +743,16 @@ async function getPulseTCGPrices(
   }
 
 
+  /* ----------------------------------------------------------
+     CALL PULSETCG
+  ---------------------------------------------------------- */
+
   const response =
     await fetch(
 
       `${process.env.PULSE_API_URL}?${params.toString()}`,
 
       {
-
         method:
           "GET",
 
@@ -827,46 +766,13 @@ async function getPulseTCGPrices(
   if (!response.ok) {
 
     throw new Error(
-      `PulseTCG request failed with HTTP ${response.status}.`
+      `PulseTCG request failed: HTTP ${response.status}`
     );
-
   }
 
 
-  const pulseData =
+  const data =
     await response.json();
-
-
-  /*
-   * --------------------------------------------------------------
-   * NORMALISE THE RESPONSE
-   * --------------------------------------------------------------
-   *
-   * Change these mappings to match the actual Pulse API response.
-   */
-
-  const psa =
-    extractGradedPrice(
-      pulseData,
-      "PSA",
-      predictions?.PSA?.predictedGrade
-    );
-
-
-  const bgs =
-    extractGradedPrice(
-      pulseData,
-      "BGS",
-      predictions?.BGS?.predictedGrade
-    );
-
-
-  const ace =
-    extractGradedPrice(
-      pulseData,
-      "ACE",
-      predictions?.ACE?.predictedGrade
-    );
 
 
   return {
@@ -882,32 +788,40 @@ async function getPulseTCGPrices(
     status:
       "Live",
 
-    PSA: psa,
+    PSA:
+      extractGradedPrice(
+        data,
+        "PSA",
+        predictions?.PSA?.predictedGrade
+      ),
 
-    BGS: bgs,
+    BGS:
+      extractGradedPrice(
+        data,
+        "BGS",
+        predictions?.BGS?.predictedGrade
+      ),
 
-    ACE: ace
+    ACE:
+      extractGradedPrice(
+        data,
+        "ACE",
+        predictions?.ACE?.predictedGrade
+      )
 
   };
 }
 
 
-/* ==========================================================================
-   EXTRACT GRADED PRICE
-   ========================================================================== */
+/* ============================================================
+   NORMALISE PULSETCG RESPONSE
+============================================================ */
 
 function extractGradedPrice(
   data,
   company,
   predictedGrade
 ) {
-
-  /*
-   * This supports a few sensible response shapes.
-   *
-   * Once you know the exact Pulse API JSON, replace this with
-   * the exact mapping.
-   */
 
   const companyData =
     data?.[company] ||
@@ -928,31 +842,24 @@ function extractGradedPrice(
     null;
 
 
-  let currency =
-    companyData?.currency ??
-    "GBP";
-
-
-  /*
-   * If the API returns a grades object:
-   *
-   * grades: {
-   *   "PSA 10": 123,
-   *   "PSA 9": 75
-   * }
-   */
+  /* ----------------------------------------------------------
+     IF API RETURNS A GRADES OBJECT
+  ---------------------------------------------------------- */
 
   if (
     price === null &&
     companyData?.grades
   ) {
 
-    const possibleGradeKeys = [
+    const possibleKeys = [
 
       predictedGrade,
 
-      String(predictedGrade)
-        .replace(company, "")
+      String(predictedGrade || "")
+        .replace(
+          company,
+          ""
+        )
         .trim(),
 
       `${company} ${predictedGrade}`
@@ -961,22 +868,31 @@ function extractGradedPrice(
 
 
     for (
-      const key of possibleGradeKeys
+      const key of possibleKeys
     ) {
 
       if (
-        companyData.grades[key] !== undefined
+        companyData.grades[key] !==
+        undefined
       ) {
 
         price =
           companyData.grades[key];
 
         break;
-
       }
-
     }
+  }
 
+
+  if (
+    price !== null &&
+    Number.isNaN(
+      Number(price)
+    )
+  ) {
+
+    price = null;
   }
 
 
@@ -985,26 +901,21 @@ function extractGradedPrice(
     grade,
 
     price:
-      typeof price === "number"
-        ? price
-        : (
-            price !== null &&
-            !Number.isNaN(
-              Number(price)
-            )
-              ? Number(price)
-              : null
-          ),
+      price === null
+        ? null
+        : Number(price),
 
-    currency
+    currency:
+      companyData?.currency ||
+      "GBP"
 
   };
 }
 
 
-/* ==========================================================================
-   GRADING ECONOMICS
-   ========================================================================== */
+/* ============================================================
+   GRADING VALUE COMPARISON
+============================================================ */
 
 function calculateGradingEconomics({
   predictions,
@@ -1014,10 +925,11 @@ function calculateGradingEconomics({
   const services = [
 
     {
-      name:
+
+      service:
         "PSA",
 
-      predictedGrade:
+      grade:
         predictions?.PSA?.predictedGrade,
 
       price:
@@ -1026,10 +938,11 @@ function calculateGradingEconomics({
     },
 
     {
-      name:
+
+      service:
         "BGS",
 
-      predictedGrade:
+      grade:
         predictions?.BGS?.predictedGrade,
 
       price:
@@ -1038,10 +951,11 @@ function calculateGradingEconomics({
     },
 
     {
-      name:
+
+      service:
         "ACE",
 
-      predictedGrade:
+      grade:
         predictions?.ACE?.predictedGrade,
 
       price:
@@ -1054,8 +968,9 @@ function calculateGradingEconomics({
 
   const available =
     services.filter(
-      service =>
-        typeof service.price === "number"
+      item =>
+        typeof item.price ===
+        "number"
     );
 
 
@@ -1067,24 +982,18 @@ function calculateGradingEconomics({
         false,
 
       message:
-        "No live graded prices were available."
+        "No live PulseTCG graded prices are available."
 
     };
-
   }
 
 
   const highest =
     available.reduce(
-
-      (highest, current) =>
-
-        current.price >
-        highest.price
-
-          ? current
-          : highest
-
+      (a, b) =>
+        b.price > a.price
+          ? b
+          : a
     );
 
 
@@ -1097,7 +1006,7 @@ function calculateGradingEconomics({
       highest.price,
 
     highestPotentialService:
-      highest.name,
+      highest.service,
 
     comparisons:
       available
@@ -1106,9 +1015,9 @@ function calculateGradingEconomics({
 }
 
 
-/* ==========================================================================
-   VALUE-AWARE RECOMMENDATION
-   ========================================================================== */
+/* ============================================================
+   FINAL GRADING SERVICE RECOMMENDATION
+============================================================ */
 
 async function createValueRecommendation({
 
@@ -1121,60 +1030,67 @@ async function createValueRecommendation({
 
 }) {
 
+  const prompt = `
 
-  const recommendationPrompt = `
+You are the final value-analysis layer for a trading-card
+grading pre-screening application.
 
-You are the financial/value comparison layer of a trading
-card grading pre-screening system.
+Your job is to compare PSA, BGS and ACE based ONLY on the
+information supplied below.
 
-You must NOT invent prices.
+DO NOT invent prices.
 
-The ONLY market prices you may use are the PulseTCG prices
-provided below.
+DO NOT invent grading fees.
 
-CARD:
+DO NOT invent shipping costs.
 
-Name:
-${card?.cardName || "Unknown"}
+DO NOT invent raw card values.
 
-Set:
-${card?.setName || "Unknown"}
+DO NOT invent profit.
 
-Number:
-${card?.cardNumber || "Unknown"}
+If grading costs are unavailable, explicitly state that the
+comparison is based on potential slab value and does not
+represent net profit.
 
-Rarity:
-${card?.rarity || "Unknown"}
+============================================================
+CARD
+============================================================
 
-Language:
-${card?.language || "Unknown"}
-
-
-GRADE PREDICTIONS:
-
-PSA:
 ${JSON.stringify(
-  predictions?.PSA || {},
+  card,
   null,
   2
 )}
 
-BGS:
+============================================================
+GRADE PREDICTIONS
+============================================================
+
 ${JSON.stringify(
-  predictions?.BGS || {},
+  predictions,
   null,
   2
 )}
 
-ACE:
+============================================================
+VISUAL DIAGNOSTICS
+============================================================
+
 ${JSON.stringify(
-  predictions?.ACE || {},
+  diagnostics,
   null,
   2
 )}
 
+============================================================
+GRADE SUMMARY
+============================================================
 
-PULSETCG DATA:
+${gradeSummary || ""}
+
+============================================================
+PULSETCG PRICE DATA
+============================================================
 
 ${JSON.stringify(
   pulsePrices,
@@ -1182,8 +1098,9 @@ ${JSON.stringify(
   2
 )}
 
-
-GRADING ECONOMICS:
+============================================================
+VALUE COMPARISON
+============================================================
 
 ${JSON.stringify(
   gradingEconomics,
@@ -1191,61 +1108,60 @@ ${JSON.stringify(
   2
 )}
 
+============================================================
+TASK
+============================================================
 
-CONDITION SUMMARY:
+Compare the three grading services.
 
-${gradeSummary || ""}
+Take into account:
 
+1. Predicted grade.
 
-YOUR TASK:
+2. PulseTCG value for that predicted grade.
 
-1. Compare the predicted grades.
+3. Confidence in the prediction.
 
-2. Compare the current PulseTCG values for those predicted grades.
+4. Visible condition risks.
 
-3. Identify which grading service has the highest available
-   potential slab value.
+5. Difference between potential slab values.
 
-4. Consider prediction uncertainty.
+6. Whether the predicted grade is sufficiently
+   supported by the photographs.
 
-5. Do not claim the AI prediction is guaranteed.
+7. Whether current price data actually exists.
 
-6. Do not invent grading fees.
+If there is no live PulseTCG price information,
+DO NOT pretend there is.
 
-7. Do not invent shipping costs.
+If there is insufficient pricing information,
+return:
 
-8. If grading/shipping costs are supplied through environment
-   variables, you may account for them.
+"Insufficient Price Data"
 
-9. If costs are NOT supplied, say that the recommendation is
-   based on potential slab value rather than full net profit.
+as the verdict.
 
-10. If no PulseTCG price exists for a service, do not pretend
-    there is one.
+Otherwise return one of:
 
-11. If all prices are unavailable, state that a value-based
-    recommendation cannot reliably be made.
+"Worth Sending"
 
-12. Use:
+"Borderline"
 
-    "Worth Sending"
+"Not Worth Sending"
 
-    "Borderline"
+Return:
 
-    or
+{
+  "service": "",
+  "predictedGrade": "",
+  "pulseValue": null,
+  "currency": "GBP",
+  "verdict": "",
+  "confidence": "",
+  "reason": ""
+}
 
-    "Not Worth Sending"
-
-    only when there is enough information to justify that
-    classification.
-
-13. If the raw card value is unavailable, do not invent it.
-
-14. Do not call the recommendation financial advice.
-
-15. Explain the main reason clearly.
-
-Return JSON only.
+Return JSON ONLY.
 
 `;
 
@@ -1258,7 +1174,7 @@ Return JSON only.
         "gemini-3.5-flash-lite",
 
       contents:
-        recommendationPrompt,
+        prompt,
 
       config: {
 
@@ -1273,35 +1189,20 @@ Return JSON only.
     });
 
 
-  const responseText =
+  const text =
     response.text;
-
-
-  if (!responseText) {
-
-    throw new Error(
-      "Gemini returned an empty recommendation."
-    );
-
-  }
 
 
   try {
 
     return JSON.parse(
-      responseText
+      text
     );
 
   } catch {
 
-    console.error(
-      "Invalid recommendation JSON:",
-      responseText
-    );
-
     throw new Error(
       "Gemini returned invalid recommendation JSON."
     );
-
   }
 }

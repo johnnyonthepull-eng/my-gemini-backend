@@ -151,7 +151,6 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
 
-    // Handles both variable naming conventions gracefully
     const frontImage = body.frontImage || body.frontBase64;
     const backImage = body.backImage || body.backBase64;
 

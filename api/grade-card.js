@@ -2,6 +2,20 @@ import { GoogleGenAI } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Retry wrapper to handle any temporary high-demand (503) spikes gracefully
+async function generateWithRetry(params, retries = 3, delay = 1000) {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (err) {
+    if (retries > 0 && (err.status === 503 || err.message?.includes('503') || err.message?.includes('overloaded'))) {
+      console.warn(`Model busy, retrying in \({delay}ms... (\){retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateWithRetry(params, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -61,9 +75,8 @@ export default async function handler(req, res) {
       }
     `;
 
-    // Using gemini-1.5-flash for stable free-tier usage
-    const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash", 
+    const response = await generateWithRetry({
+      model: "gemini-3.8-flash", 
       contents: [
         {
           role: "user",

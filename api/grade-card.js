@@ -29,9 +29,11 @@ function sleep(ms) {
 ========================================================= */
 
 async function generateWithFallback(params) {
+  // Expanded fallback chain to prevent temporary capacity overloads
   const models = [
     "gemini-3.8-flash",
-    "gemini-3.5-flash"
+    "gemini-3.5-flash",
+    "gemini-2.5-flash"
   ];
 
   let lastError = null;
@@ -93,9 +95,9 @@ async function generateWithFallback(params) {
         }
 
         if (attempt === 1) {
-          await sleep(2000);
+          await sleep(1500);
         } else if (attempt === 2) {
-          await sleep(5000);
+          await sleep(3000);
         }
       }
     }
@@ -162,18 +164,17 @@ export default async function handler(req, res) {
     const systemInstruction = `
 You are an uncompromising, brutally strict professional trading card grading inspector. Your mandate is to protect collectors from ever getting a lower grade than predicted. When in doubt, you ALWAYS penalize heavily and grade down. 
 
-BRUTAL ZERO-TOLERANCE RULES:
-1. Virtual Filter Simulation: Aggressively simulate high-contrast and edge-enhancement filters. Treat every shadow, reflection, foil swirl, or speck as a potential defect (micro-scratch, print line, dent, or edge chipping) unless 100% proven otherwise.
-2. The Gem Mint / Pristine 10 Wall: A grade of 10 (PSA 10, BGS 10 subgrades, or Ace 10) is practically impossible unless the card is absolute perfection under optical analysis. 
-   - ANY back or front edge whitening (even a single microscopic speck of chipping) automatically caps PSA at 8 or lower.
-   - ANY hairline surface scratch or print line automatically disqualifies a 10, dropping the maximum ceiling immediately.
-   - ANY slight corner softening blunts a 10 instantly.
-3. Company Specific Strictness:
-   - PSA: Brutally strict on rear centering and back edge chipping. No subgrades mean one flaw brings down the whole score.
-   - BGS (Beckett): Independent subgrades (Centering, Corners, Edges, Surface) must be completely flawless for any 10. 
-     * BLACK LABEL POTENTIAL: Only populate "blackLabelPotential" with "Black Label Potential" if EVERY SINGLE ONE of the four BGS subgrades evaluates to an absolute 10. If even one subgrade is 9.5 or lower, leave it blank or state "None".
-   - Ace: Apply strict modern standards with zero margin for error on centering ratios.
-4. Conservative Fallback: If you are torn between two grades (e.g., 9 and 10, or 8 and 9), ALWAYS choose the lower grade.
+BRUTAL ZERO-TOLERANCE RULES & PRINT LINE PROTOCOL:
+1. Virtual Multi-Angle Lighting & Contrast Filter Simulation: Mentally apply dynamic high-contrast, directional shadow-mapping, and color-channel separation filters across the entire card surface. 
+2. Print Line Hunting Mandate: Actively scan for vertical or horizontal faint lines across the foil or card stock, even those that blend into the artwork or require a specific angle to see. Treat any linear anomaly, reflection discontinuity, texture disruption, or faint streak as a definitive print line. 
+3. Print Line Penalty: The moment a print line (visible or subtle) is detected, it instantly caps the PSA grade to a maximum of 8 or 9, forces BGS Surface subgrade down to 8.5 or lower, and disqualifies any Gem Mint / Pristine 10. List every detected print line explicitly under "surfaceFlaws".
+4. The Gem Mint / Pristine 10 Wall: A grade of 10 is impossible if any defect exists. Any back or front edge whitening, hairline scratch, or print line instantly kills the 10.
+5. Company Specific Strictness:
+   - PSA: Brutally strict on rear centering, back edge chipping, and surface print lines. No subgrades mean one flaw brings down the whole score.
+   - BGS (Beckett): Independent subgrades must be flawless for any 10. 
+     * BLACK LABEL POTENTIAL: Only populate "blackLabelPotential" with "Black Label Potential" if EVERY SINGLE ONE of the four BGS subgrades is an absolute 10.
+   - Ace: Apply strict modern standards with zero margin for error.
+6. Conservative Fallback: If you are torn between two grades, ALWAYS choose the lower grade.
 
 Return ONLY valid JSON matching this exact structure:
 
@@ -244,7 +245,7 @@ Return ONLY valid JSON matching this exact structure:
       systemInstruction,
       parts: [
         {
-          text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Hunt for edge chipping, surface hairlines, and corner imperfections, calculate exact millimeter borders, and output the conservative JSON response."
+          text: "Execute a brutally strict, zero-tolerance optical inspection across PSA, BGS, and Ace standards. Simulate high-contrast lighting filters to aggressively hunt down subtle print lines and surface defects, calculate exact millimeter borders, and output the conservative JSON response."
         },
         {
           inlineData: {

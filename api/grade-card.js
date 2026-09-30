@@ -44,17 +44,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const apiKeys = [
-      process.env.GEMINI_API_KEY_1,
-      process.env.GEMINI_API_KEY_2,
-      process.env.GEMINI_API_KEY_3,
-      process.env.GEMINI_API_KEY_4,
-      process.env.GEMINI_API_KEY_5,
-      process.env.GEMINI_API_KEY
-    ].filter(Boolean);
-
-    if (apiKeys.length === 0) {
-      return res.status(500).json({ error: "No GEMINI_API_KEY environment variables found on Vercel." });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Missing GEMINI_API_KEY environment variable." });
     }
 
     const body = req.body || {};
@@ -148,42 +140,26 @@ Return ONLY valid JSON matching this exact structure:
 }
 `;
 
-    let response = null;
-    let lastError = null;
-
-    // Use gemini-flash-latest which resolves seamlessly across the developer API
-    for (const key of apiKeys) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: key });
-        response = await ai.models.generateContent({
-          model: "gemini-flash-latest",
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: "Execute strict card grading inspection and output valid JSON." },
-                { inlineData: { mimeType: front.mimeType, data: front.data } },
-                { inlineData: { mimeType: back.mimeType, data: back.data } }
-              ]
-            }
-          ],
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            temperature: 0.0,
-            maxOutputTokens: 5000
-          }
-        });
-        if (response && response.text) break;
-      } catch (err) {
-        lastError = err;
-        console.error("Key attempt failed:", err?.message || err);
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: "Execute strict card grading inspection and output valid JSON." },
+            { inlineData: { mimeType: front.mimeType, data: front.data } },
+            { inlineData: { mimeType: back.mimeType, data: back.data } }
+          ]
+        }
+      ],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        temperature: 0.0,
+        maxOutputTokens: 5000
       }
-    }
-
-    if (!response || !response.text) {
-      throw lastError || new Error("All keys failed to return a response.");
-    }
+    });
 
     let text = response.text.trim();
     if (text.startsWith("```json")) {

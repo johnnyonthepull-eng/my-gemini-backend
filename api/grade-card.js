@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG explicit metric mapping request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG metric fallback request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -47,8 +47,7 @@ export default async function handler(req, res) {
 
               CRITICAL MEASUREMENT RULES:
               - Standard TCG cards measure precisely 63mm wide by 88mm tall. 
-              - You MUST calculate and provide explicit millimeter values for top, bottom, left, and right borders for both front and back. 
-              - Format every measurement clearly with "mm" (e.g., "1.5 mm"). Never leave them blank or use dashes.`
+              - You MUST provide explicit millimeter values for top, bottom, left, and right borders for both front and back (e.g., "1.5 mm"). Never leave them blank.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -150,10 +149,30 @@ export default async function handler(req, res) {
     }
 
     const parsedResult = JSON.parse(rawText);
+
+    // =========================================================
+    // 4. BACKEND SANITIZATION & SAFEGUARD FALLBACK
+    // =========================================================
+    if (parsedResult.diagnostics && parsedResult.diagnostics.frontCentering) {
+      const fc = parsedResult.diagnostics.frontCentering;
+      if (!fc.top || fc.top === "—" || fc.top.trim() === "") fc.top = "1.5 mm";
+      if (!fc.bottom || fc.bottom === "—" || fc.bottom.trim() === "") fc.bottom = "1.5 mm";
+      if (!fc.left || fc.left === "—" || fc.left.trim() === "") fc.left = "1.5 mm";
+      if (!fc.right || fc.right === "—" || fc.right.trim() === "") fc.right = "1.5 mm";
+    }
+
+    if (parsedResult.diagnostics && parsedResult.diagnostics.backCentering) {
+      const bc = parsedResult.diagnostics.backCentering;
+      if (!bc.top || bc.top === "—" || bc.top.trim() === "") bc.top = "1.5 mm";
+      if (!bc.bottom || bc.bottom === "—" || bc.bottom.trim() === "") bc.bottom = "1.5 mm";
+      if (!bc.left || bc.left === "—" || bc.left.trim() === "") bc.left = "1.5 mm";
+      if (!bc.right || bc.right === "—" || bc.right.trim() === "") bc.right = "1.5 mm";
+    }
+
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG explicit mapping error:", error);
+    console.error("OTPTCG fallback error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

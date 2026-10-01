@@ -50,7 +50,6 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
       .replace(/ex\b/gi, "ex")
       .trim();
 
-    // Isolated variables for exact parsing
     const isolatedCardNumber = cardNumber ? cardNumber.trim() : "";
     const isolatedSetName = setName ? setName.trim() : "";
     
@@ -58,7 +57,6 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
     const gradingCompany = rawGradeTier.split(" ")[0] || "PSA";
     const numericGrade = rawGradeTier.split(" ")[1] || "9";
 
-    // Build explicit search query separating set and card number completely
     const queryParts = [
       cleanName, 
       isolatedCardNumber, 
@@ -93,7 +91,6 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
         const val = parseFloat(item.price.value);
         const title = (item.title || "").toUpperCase();
         
-        // Strict verification: title must contain the grading company name and numeric grade
         const hasCompany = title.includes(gradingCompany.toUpperCase());
         const hasGrade = title.includes(numericGrade);
 
@@ -167,7 +164,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG grading & precise pricing request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG forensic grading & precise pricing request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -179,17 +176,18 @@ export default async function handler(req, res) {
           role: "user",
           parts: [
             {
-              text: `You are an elite, uncompromising trading card grading master inspector and UK market pricing expert. 
+              text: `You are OnThePullTCG’s elite, uncompromising forensic trading card grading master inspector and digital multi-spectral analysis engine. Your reputation relies on absolute, unsparing accuracy. Collectors depend on you to catch every single micro-flaw before risking money on submissions.
 
-              CRITICAL INSPECTION & PRICING MANDATES:
-              1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit or fake.
-              2. ULTRA-PRECISION CARD METADATA: Accurately extract the exact Card Name, Set Name, Card Number (e.g., 232/091), and Language (e.g., English).
-              3. ULTRA-PRECISION DEFECT ANALYSIS: Inspect corners, edges, and surfaces with extreme scrutiny. 
-                 - Corners: Micro-chipping, rounding, whitening.
-                 - Edges: Chipping, silvering, rough cuts.
-                 - Surface: Hairlines, print lines, foil dimples.
-              4. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and overall grades (PSA, BGS, ACE).
-              5. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.`
+              MULTI-SPECTRAL FORENSIC SIMULATION MANDATES:
+              1. VIRTUAL FILTER PROCESSING: Analyze the uploaded front and back images by simulating advanced optical filters:
+                 - Apply virtual Blue/UV spectrum filtering logic to detect foil micro-scratches, hairline scuffs, and surface disruptions invisible to casual observation.
+                 - Apply virtual Raking Light simulation (low-angle shadowing logic) across the card face and back borders to cast shadows over print lines, depressions, and foil dimples.
+              2. MERCILESS DEFECT HUNTING: Actively hunt for flaws. Do not give the card the benefit of the doubt.
+                 - Corners: Inspect all 4 corners under extreme magnification logic. Any micro-whitening, minor corner softening, or fiber fraying instantly penalizes the sub-grade.
+                 - Edges: Look closely for silvering, chipping, or rough factory cutting.
+                 - Surface: Any hairline scratch, print line, or foil dimple found via raking/blue-light simulation drops the surface score severely.
+              3. THE GEM MINT 10 STANDARD: A 10 must be mathematically and visually flawless under forensic multi-spectral scrutiny. If you spot a flaw, penalize the grade accordingly and list it explicitly in diagnostics.
+              4. PRESUMED AUTHENTICITY: Treat every card submitted as 100% genuine authentic merchandise.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }

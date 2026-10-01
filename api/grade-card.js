@@ -40,11 +40,11 @@ export default async function handler(req, res) {
     const ai = new GoogleGenAI({ apiKey: apiKey });
 
     const promptText = `SESSION_NONCE: ${sessionNonce || Date.now()}
-You are a forensic TCG grading scientist and senior authenticator. Perform a completely fresh, independent, isolated evaluation of the newly uploaded images. Do not carry over or assume any data from previous card uploads.
+You are a forensic TCG grading scientist and senior authenticator. Perform a completely fresh, independent, analytical evaluation of the newly uploaded images. Do not carry over or assume any data from previous card uploads.
 
 CLINICAL & ANALYTIC PROTOCOLS:
 1. PRECISE MEASUREMENTS: Calculate front and back border widths down to the tenth of a millimeter (e.g., "1.9 mm") and compute precise centering ratios.
-2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect. You are strictly forbidden from writing "None detected". Every card possesses microscopic factory traits, edge fibers, or texture lines that must be detailed.
+2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect. You are strictly forbidden from writing "None detected". Detail actual texture lines, micro-whitening, or fiber traits.
 3. SUBGRADE MATHEMATICS: Provide rigorous sub-grades for BGS where Corners, Edges, Surface, and Centering dictate the score.
 4. RIGOROUS JUSTIFICATIONS: Link every grade ceiling directly to physical evidence observed under simulated magnification.
 
@@ -81,9 +81,8 @@ Return ONLY a valid JSON object matching this exact key structure:
   "surfaceFlaws": "Precise analytical breakdown of foil sheen, texture alignment, microscopic hairline scuffs, or refractive print lines."
 }`;
 
-    // Using the correct model name for the @google/genai SDK
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
@@ -109,7 +108,7 @@ Return ONLY a valid JSON object matching this exact key structure:
       }
     });
 
-    const rawText = response.text; // Note: response.text is a property in @google/genai
+    const rawText = response.text;
     if (!rawText) {
       return res.status(500).json({ error: "No text generated from the Gemini model." });
     }

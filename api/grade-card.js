@@ -1,14 +1,5 @@
 const { GoogleGenAI } = require("@google/genai");
 
-// Set max body size explicitly for Vercel's built-in parser
-module.exports.config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-};
-
 module.exports = async function handler(req, res) {
   // =========================================================
   // 1. BULLETPROOF CORS HEADERS
@@ -33,7 +24,6 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "GEMINI_API_KEY is missing from Vercel environment variables." });
     }
 
-    // req.body is automatically parsed by Vercel up to 10mb
     const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
@@ -132,4 +122,12 @@ Return ONLY a valid raw JSON object. Do not wrap the JSON in markdown code block
     console.error("OTPTCG grade-card error details:", error);
     return res.status(500).json({ error: error.message || "Card grading failed due to an internal server exception." });
   }
+};
+
+module.exports.config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '20mb',
+    },
+  },
 };

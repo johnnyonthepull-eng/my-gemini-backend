@@ -37,24 +37,38 @@ async function getEbayAccessToken() {
   }
 }
 
-// Helper to precisely query UK marketplace solds using card name, clean number, set, language, and grade
+// Precise market lookup utilizing isolated variables for company, set, and card number
 async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, gradeTier) {
   const token = await getEbayAccessToken();
   if (!token) return null;
 
   try {
-    let cleanName = cardName
+    const cleanName = cardName
       .replace(/pokemon/gi, "")
       .replace(/ex\b/gi, "ex")
       .trim();
 
-    // Extract base number without slash (e.g. "232/091" -> "232") to match real collector listing titles safely
-    let cleanNumber = cardNumber ? cardNumber.split('/')[0] : "";
+    const isolatedCardNumber = cardNumber ? cardNumber.split('/')[0].trim() : "";
+    const isolatedSetName = setName ? setName.trim() : "";
     
-    const queryParts = [cleanName, cleanNumber, setName, language, gradeTier].filter(Boolean);
+    // Extract grading company from tier (e.g. "PSA 9" -> "PSA", "BGS 9.5" -> "BGS", "ACE 10" -> "ACE")
+    const rawGradeTier = gradeTier ? gradeTier.trim() : "PSA 9";
+    const gradingCompany = rawGradeTier.split(" ")[0] || "PSA";
+    const numericGrade = rawGradeTier.split(" ")[1] || "9";
+
+    // Build explicit search query ensuring grading company is in the title
+    const queryParts = [
+      cleanName, 
+      isolatedCardNumber, 
+      isolatedSetName, 
+      gradingCompany, 
+      numericGrade,
+      language || "English"
+    ].filter(Boolean);
+
     const searchQuery = encodeURIComponent(queryParts.join(" "));
     
-    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=20`;
+    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=25`;
 
     const response = await fetch(url, {
       headers: {
@@ -72,8 +86,11 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
     for (const item of data.itemSummaries) {
       if (item.price && item.price.value) {
         const val = parseFloat(item.price.value);
-        // Filter out low-end accessory/proxy noise (< £40) when looking for real graded card valuations
-        if (!isNaN(val) && val > 40) {
+        // Validating that item title includes the grading company to filter out raw cards
+        const title = (item.title || "").toUpperCase();
+        const hasCompany = title.includes(gradingCompany.toUpperCase()) || title.includes("SLAB") || title.includes("GRADED");
+
+        if (!isNaN(val) && val > 0 && hasCompany) {
           prices.push(val);
         }
       }
@@ -185,7 +202,7 @@ export default async function handler(req, res) {
             aceConfidence: { type: Type.STRING },
             aceReason: { type: Type.STRING },
 
-            // RECENT MARKET SOLDS (UK - LAST 7 DAYS)
+            // RECENT MARKET SOLDS (UK)
             marketPricing: {
               type: Type.OBJECT,
               properties: {
@@ -258,7 +275,6 @@ export default async function handler(req, res) {
     const parsedResult = JSON.parse(rawText);
     parsedResult.isAuthentic = true;
 
-    // Execute precise parallel lookups using Name, Card Number, Set, Language, and Grade
     const cardName = parsedResult.cardName;
     const cardNumber = parsedResult.cardNumber;
     const setName = parsedResult.setName;
@@ -276,7 +292,6 @@ export default async function handler(req, res) {
       if (liveAcePrice) parsedResult.marketPricing.aceLastSolds7Days = liveAcePrice;
     }
 
-    // Decimal safeguard formatting
     const ensureDecimalMm = (val) => {
       if (!val || val === "—" || val.trim() === "") return "1.50 mm";
       const cleaned = val.replace(/[^0-9.]/g, "");

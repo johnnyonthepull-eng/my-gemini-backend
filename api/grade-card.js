@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     // 3. CALL GEMINI API WITH FLAT, GUARANTEED SCHEMA
     // =========================================================
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.8-flash",
       contents: [
         {
           role: "user",

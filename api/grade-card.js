@@ -1,11 +1,9 @@
 export default async function handler(req, res) {
-  // Force absolute zero caching on Vercel and edge nodes
+  // Absolute CORS & Cache-Control headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control, Pragma");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -38,7 +36,6 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
     }
 
-    // Using stateless URL timestamp parameter to ensure clean pipeline execution
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
     const promptText = `SESSION_NONCE: ${sessionNonce || Date.now()}
@@ -109,7 +106,7 @@ Return ONLY a valid JSON object matching this exact key structure:
           }
         ],
         generationConfig: {
-          temperature: 0.3 // Slight temperature bump to prevent rigid fallback caching loops
+          temperature: 0.3
         }
       })
     });

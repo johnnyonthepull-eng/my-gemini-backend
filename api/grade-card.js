@@ -1,7 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+const { GoogleGenAI } = require("@google/genai");
 
-export default async function handler(req, res) {
-  // Always attach CORS headers immediately
+module.exports = async function handler(req, res) {
+  // =========================================================
+  // 1. BULLETPROOF CORS HEADERS
+  // =========================================================
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Vary", "Origin");
@@ -19,7 +21,7 @@ export default async function handler(req, res) {
 
   try {
     if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured in Vercel environment variables.");
+      throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -117,4 +119,4 @@ Return a strict raw JSON object (no markdown formatting, no code blocks, just ra
     console.error("OTPTCG grade-card error:", error);
     return res.status(500).json({ error: error.message || "Card grading failed." });
   }
-}
+};

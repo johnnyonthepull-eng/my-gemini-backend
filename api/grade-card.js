@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
     // =========================================================
-    // 3. CALL GEMINI API WITH STRICT DETAILED SCHEMA
+    // 3. CALL GEMINI API WITH FLAT, GUARANTEED SCHEMA
     // =========================================================
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
@@ -59,10 +59,11 @@ export default async function handler(req, res) {
               text: `You are a master trading card grading inspector. Analyze the provided front and back card images. 
               
               CRITICAL RULES:
-              - DO NOT leave any fields blank, use dashes, or use lazy placeholders. Every single text field must contain rich, detailed professional grading data.
+              - DO NOT leave any text fields blank, use dashes, or use lazy placeholders. Every single text field must contain rich, detailed professional grading data.
               - Treat the card as 100% authentic. Ignore plastic glare/reflections from sleeves, toploaders, or holders.
-              - Provide deep, descriptive analysis for corners, edges, and surface flaws instead of just saying "Clean". Describe micro-details (e.g., slight corner crispness, microscopic edge chipping, print lines, gloss condition).
-              - Provide exact percentage estimates for all individual centering sides (top, bottom, left, right) rather than leaving them blank.`
+              - Provide deep, descriptive analysis for corners, edges, and surface flaws.
+              - Provide exact percentage estimates for all individual centering sides (top, bottom, left, right) and clear ratios.
+              - Fully populate all PSA, BGS, ACE grades, subgrades, and recommendation reasons.`
             },
             {
               inlineData: {
@@ -92,63 +93,43 @@ export default async function handler(req, res) {
             variant: { type: Type.STRING, description: "Holofoil, Reverse, etc." },
             identificationConfidence: { type: Type.STRING, description: "Confidence percentage e.g. 99%" },
             isAuthentic: { type: Type.BOOLEAN, description: "Always true" },
-            psa: {
-              type: Type.OBJECT,
-              properties: {
-                grade: { type: Type.STRING, description: "PSA estimated grade e.g. GEM MINT 10 or PSA 9" },
-                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
-                reason: { type: Type.STRING, description: "Thorough paragraph explaining why this PSA grade was awarded based on corners, edges, and surface." }
-              },
-              required: ["grade", "confidence", "reason"]
-            },
-            bgs: {
-              type: Type.OBJECT,
-              properties: {
-                grade: { type: Type.STRING, description: "BGS estimated grade e.g. BGS 9.5" },
-                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
-                subgrades: {
-                  type: Type.OBJECT,
-                  properties: {
-                    centering: { type: Type.STRING, description: "Subgrade score e.g. 9.5" },
-                    corners: { type: Type.STRING, description: "Subgrade score e.g. 9.5" },
-                    edges: { type: Type.STRING, description: "Subgrade score e.g. 9.0" },
-                    surface: { type: Type.STRING, description: "Subgrade score e.g. 9.5" }
-                  },
-                  required: ["centering", "corners", "edges", "surface"]
-                },
-                reason: { type: Type.STRING, description: "Detailed subgrade breakdown rationale." }
-              },
-              required: ["grade", "confidence", "subgrades", "reason"]
-            },
-            ace: {
-              type: Type.OBJECT,
-              properties: {
-                grade: { type: Type.STRING, description: "ACE grade e.g. ACE 9" },
-                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
-                reason: { type: Type.STRING, description: "Detailed ACE rationale." }
-              },
-              required: ["grade", "confidence", "reason"]
-            },
-            recommendation: {
-              type: Type.OBJECT,
-              properties: {
-                service: { type: Type.STRING, description: "Recommended grading service e.g. PSA" },
-                verdict: { type: Type.STRING, description: "Grade / Raw / Pass" },
-                reason: { type: Type.STRING, description: "Actionable advice on submission value and instruction to remove from holder before final send-in." }
-              },
-              required: ["service", "verdict", "reason"]
-            },
-            gradeSummary: { type: Type.STRING, description: "Comprehensive, multi-sentence executive summary of the card's physical condition." },
+
+            // FLATTENED PSA FIELDS
+            psaGrade: { type: Type.STRING, description: "PSA estimated grade e.g. GEM MINT 10 or PSA 9" },
+            psaConfidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+            psaReason: { type: Type.STRING, description: "Thorough paragraph explaining why this PSA grade was awarded." },
+
+            // FLATTENED BGS FIELDS
+            bgsGrade: { type: Type.STRING, description: "BGS estimated grade e.g. BGS 9.5" },
+            bgsConfidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+            bgsCenteringSub: { type: Type.STRING, description: "BGS Centering subgrade e.g. 9.5" },
+            bgsCornersSub: { type: Type.STRING, description: "BGS Corners subgrade e.g. 9.5" },
+            bgsEdgesSub: { type: Type.STRING, description: "BGS Edges subgrade e.g. 9.0" },
+            bgsSurfaceSub: { type: Type.STRING, description: "BGS Surface subgrade e.g. 9.5" },
+            bgsReason: { type: Type.STRING, description: "Detailed subgrade breakdown rationale." },
+
+            // FLATTENED ACE FIELDS
+            aceGrade: { type: Type.STRING, description: "ACE grade e.g. ACE 9" },
+            aceConfidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+            aceReason: { type: Type.STRING, description: "Detailed ACE rationale." },
+
+            // RECOMMENDATION & SUMMARY
+            recommendationService: { type: Type.STRING, description: "Recommended grading service e.g. PSA" },
+            recommendationVerdict: { type: Type.STRING, description: "Grade / Raw / Pass" },
+            recommendationReason: { type: Type.STRING, description: "Actionable advice on submission value and instruction to remove from holder." },
+            gradeSummary: { type: Type.STRING, description: "Comprehensive executive summary of the card's physical condition." },
+
+            // DIAGNOSTICS
             diagnostics: {
               type: Type.OBJECT,
               properties: {
                 frontCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    bottom: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    left: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    right: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    top: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    bottom: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    left: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    right: { type: Type.STRING, description: "Percentage e.g. 50%" },
                     ratio: { type: Type.STRING, description: "Ratio e.g. 50/50" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
@@ -156,10 +137,10 @@ export default async function handler(req, res) {
                 backCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    bottom: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    left: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
-                    right: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    top: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    bottom: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    left: { type: Type.STRING, description: "Percentage e.g. 50%" },
+                    right: { type: Type.STRING, description: "Percentage e.g. 50%" },
                     ratio: { type: Type.STRING, description: "Ratio e.g. 50/50" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
@@ -167,17 +148,17 @@ export default async function handler(req, res) {
                 cornerFlaws: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: "Detailed descriptions of corner condition (e.g. Sharp 90-degree corners, pristine points, zero whitening observed)"
+                  description: "Detailed descriptions of corner condition"
                 },
                 edgeFlaws: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: "Detailed descriptions of edge condition (e.g. Clean borders, minor factory cut texture along top edge)"
+                  description: "Detailed descriptions of edge condition"
                 },
                 surfaceFlaws: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: "Detailed descriptions of surface condition (e.g. Glossy finish, vibrant foil reflection, no scratching or print lines)"
+                  description: "Detailed descriptions of surface condition"
                 }
               },
               required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
@@ -185,8 +166,12 @@ export default async function handler(req, res) {
           },
           required: [
             "cardName", "setName", "cardNumber", "rarity", "language", 
-            "variant", "identificationConfidence", "isAuthentic", "psa", 
-            "bgs", "ace", "recommendation", "gradeSummary", "diagnostics"
+            "variant", "identificationConfidence", "isAuthentic", 
+            "psaGrade", "psaConfidence", "psaReason",
+            "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub", "bgsEdgesSub", "bgsSurfaceSub", "bgsReason",
+            "aceGrade", "aceConfidence", "aceReason",
+            "recommendationService", "recommendationVerdict", "recommendationReason",
+            "gradeSummary", "diagnostics"
           ]
         }
       }

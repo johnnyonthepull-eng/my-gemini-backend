@@ -88,8 +88,9 @@ Return a strict raw JSON object (no markdown formatting, no code blocks, just ra
 }
 `;
 
+    // Using the stable auto-updating Flash alias supported by @google/genai
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-flash-latest",
       contents: [
         {
           role: "user",

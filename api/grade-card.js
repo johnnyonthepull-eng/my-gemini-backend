@@ -1,5 +1,14 @@
 const { GoogleGenAI } = require("@google/genai");
 
+// Set max body size explicitly for Vercel's built-in parser
+module.exports.config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 module.exports = async function handler(req, res) {
   // =========================================================
   // 1. BULLETPROOF CORS HEADERS
@@ -24,8 +33,8 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "GEMINI_API_KEY is missing from Vercel environment variables." });
     }
 
-    const body = await parseRawBody(req);
-    const { frontImage, backImage, sessionNonce } = body || {};
+    // req.body is automatically parsed by Vercel up to 10mb
+    const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
@@ -123,31 +132,4 @@ Return ONLY a valid raw JSON object. Do not wrap the JSON in markdown code block
     console.error("OTPTCG grade-card error details:", error);
     return res.status(500).json({ error: error.message || "Card grading failed due to an internal server exception." });
   }
-};
-
-// Helper to read raw stream body safely
-function parseRawBody(req) {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => {
-      data += chunk;
-    });
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch (err) {
-        reject(new Error("Invalid JSON body payload received."));
-      }
-    });
-    req.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
-
-// Correct CommonJS Vercel config export
-module.exports.config = {
-  api: {
-    bodyParser: false,
-  },
 };

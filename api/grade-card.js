@@ -47,69 +47,73 @@ export default async function handler(req, res) {
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
     // =========================================================
-    // 3. CALL GEMINI API FOR CARD ANALYSIS & GRADING
+    // 3. CALL GEMINI API FOR IDENTIFICATION & GRADING
     // =========================================================
     const prompt = `
-You are an expert trading card authenticator and professional grader specializing in Pokémon and trading cards (PSA, Beckett/BGS, ACE Grading) across English, Japanese, and Simplified Chinese sets. 
+You are an expert trading card archivist and professional grading assistant (PSA, Beckett/BGS, ACE Grading) specializing in English, Japanese, and Simplified Chinese trading cards. 
 
-CRITICAL INSTRUCTION: Assume the card is authentic unless there are glaring, undeniable counterfeit flaws (e.g., completely wrong back artwork, incorrect game title, or missing official copyright text). Do NOT flag regional print differences (such as Japanese texture layouts, Simplified Chinese back coloring, or standard border variations) as fakes. 
+CORE DIRECTIVES:
+1. **ABSOLUTE IDENTIFICATION:** Your primary job is to identify the card precisely (Name, Set, Card Number, Rarity, Language, Variant) using its artwork, set symbols, and numbering. Never refuse to identify a card.
+2. **ZERO FAKE CHECKING:** You are a grading and identification tool, NOT an anti-counterfeit officer. Never flag a card as fake, counterfeit, or suspicious. Always treat the item as a genuine collectible, set "isAuthentic": true, and output a full grading report.
+3. **PROTECTIVE HOLDERS:** Cards may be scanned inside penny sleeves, tolopaders, or semi-rigids. Disregard surface reflections or light glare from the plastic holder when evaluating condition.
+4. **COMPLETENESS:** You MUST populate every single field, subgrade, measurement, score, and analytic reason below. Never leave anything missing or blank.
 
-Analyze the provided front and back images of the trading card and output a strict JSON object (no markdown formatting, raw JSON only) matching this exact schema:
+Analyze the provided front and back images and output a strict JSON object (no markdown formatting, raw JSON only) matching this exact schema:
 
 {
-  "cardName": "string",
-  "setName": "string",
-  "cardNumber": "string",
-  "rarity": "string",
-  "language": "string",
-  "variant": "string",
-  "identificationConfidence": "string (e.g. 98%)",
+  "cardName": "string (exact accurate card name)",
+  "setName": "string (exact official set name)",
+  "cardNumber": "string (exact collector number, e.g. 025/198)",
+  "rarity": "string (exact card rarity)",
+  "language": "string (English / Japanese / Simplified Chinese)",
+  "variant": "string (e.g. Holofoil, Reverse Holo, Base)",
+  "identificationConfidence": "string (e.g. 99%)",
   "isAuthentic": true,
   "psa": {
-    "grade": "string (e.g. 9 or GEM MINT 10)",
-    "confidence": "string",
-    "reason": "string"
+    "grade": "string (e.g. GEM MINT 10, PSA 9, PSA 8)",
+    "confidence": "string (e.g. 95%)",
+    "reason": "string detailing precise justification for this PSA grade based on corners, edges, surface, and centering"
   },
   "bgs": {
-    "grade": "string",
-    "confidence": "string",
+    "grade": "string (e.g. BGS 9.5, BGS 9)",
+    "confidence": "string (e.g. 95%)",
     "subgrades": {
-      "centering": "string",
-      "corners": "string",
-      "edges": "string",
-      "surface": "string"
+      "centering": "string (e.g. 9.5)",
+      "corners": "string (e.g. 9.5)",
+      "edges": "string (e.g. 9.0)",
+      "surface": "string (e.g. 9.5)"
     },
-    "reason": "string"
+    "reason": "string breaking down the subgrade evaluations"
   },
   "ace": {
-    "grade": "string",
-    "confidence": "string",
-    "reason": "string"
+    "grade": "string (e.g. ACE 9)",
+    "confidence": "string (e.g. 95%)",
+    "reason": "string detailing the Ace grade rationale"
   },
   "recommendation": {
-    "service": "string (e.g. PSA / BGS / ACE)",
-    "verdict": "string (e.g. Grade / Raw / Pass)",
-    "reason": "string"
+    "service": "string (PSA / BGS / ACE)",
+    "verdict": "string (Grade / Raw / Pass)",
+    "reason": "string advising the best grading path and reminding the user to safely remove the card from its holder prior to final submission."
   },
-  "gradeSummary": "string",
+  "gradeSummary": "string providing a comprehensive, data-driven summary of the card's condition across all four grading pillars.",
   "diagnostics": {
     "frontCentering": {
-      "top": "string",
-      "bottom": "string",
-      "left": "string",
-      "right": "string",
-      "ratio": "string"
+      "top": "string (e.g. 48%)",
+      "bottom": "string (e.g. 52%)",
+      "left": "string (e.g. 49%)",
+      "right": "string (e.g. 51%)",
+      "ratio": "string (e.g. 49/51)"
     },
     "backCentering": {
-      "top": "string",
-      "bottom": "string",
-      "left": "string",
-      "right": "string",
-      "ratio": "string"
+      "top": "string (e.g. 50%)",
+      "bottom": "string (e.g. 50%)",
+      "left": "string (e.g. 50%)",
+      "right": "string (e.g. 50%)",
+      "ratio": "string (e.g. 50/50)"
     },
-    "cornerFlaws": ["array of strings describing corner issues or empty"],
-    "edgeFlaws": ["array of strings describing edge issues or empty"],
-    "surfaceFlaws": ["array of strings describing surface issues or empty"]
+    "cornerFlaws": ["array of specific observations or ['Clean corners']"],
+    "edgeFlaws": ["array of specific observations or ['Clean edges']"],
+    "surfaceFlaws": ["array of specific observations or ['Clean surface']"]
   }
 }
 `;

@@ -1,17 +1,23 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Initialize the Gemini client using Vercel environment variables
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default async function handler(req, res) {
   // =========================================================
-  // 1. CORS HEADERS & PREFLIGHT HANDLING
+  // 1. ROBUST CORS & PREFLIGHT HANDLING
   // =========================================================
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  
+  // Dynamically echo back whatever headers the browser requests during preflight
+  const requestedHeaders = req.headers["access-control-request-headers"];
+  res.setHeader(
+    "Access-Control-Allow-Headers", 
+    requestedHeaders || "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With"
+  );
+  
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
@@ -38,7 +44,7 @@ export default async function handler(req, res) {
 
     console.log("OTPTCG grading request received. Nonce:", sessionNonce || "none");
 
-    // Clean base64 strings (strip out data URL prefixes if present)
+    // Clean base64 strings
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
@@ -135,7 +141,6 @@ Analyze the provided front and back images of the trading card and output a stri
       throw new Error("No response received from the grading model.");
     }
 
-    // Clean potential markdown code blocks from model response
     const cleanedJSON = rawText
       .replace(/```json/g, "")
       .replace(/```/g, "")

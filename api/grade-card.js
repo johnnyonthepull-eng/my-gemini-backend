@@ -1,32 +1,5 @@
 const { GoogleGenAI } = require("@google/genai");
 
-// Disable default body parser to process raw image streams safely without size limits
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
-// Helper to read raw stream body safely
-async function parseRawBody(req) {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => {
-      data += chunk;
-    });
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(data));
-      } catch (err) {
-        reject(new Error("Invalid JSON body payload received."));
-      }
-    });
-    req.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
-
 module.exports = async function handler(req, res) {
   // =========================================================
   // 1. BULLETPROOF CORS HEADERS
@@ -51,7 +24,6 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "GEMINI_API_KEY is missing from Vercel environment variables." });
     }
 
-    // Parse the incoming body manually to avoid size restrictions
     const body = await parseRawBody(req);
     const { frontImage, backImage, sessionNonce } = body || {};
 
@@ -151,4 +123,31 @@ Return ONLY a valid raw JSON object. Do not wrap the JSON in markdown code block
     console.error("OTPTCG grade-card error details:", error);
     return res.status(500).json({ error: error.message || "Card grading failed due to an internal server exception." });
   }
+};
+
+// Helper to read raw stream body safely
+function parseRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(data));
+      } catch (err) {
+        reject(new Error("Invalid JSON body payload received."));
+      }
+    });
+    req.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
+
+// Correct CommonJS Vercel config export
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
 };

@@ -1,8 +1,9 @@
+// api/grade-card.js
 import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Helper to fetch an OAuth token from eBay using your production keys
+// Helper to fetch an OAuth token from eBay using production keys
 async function getEbayAccessToken() {
   const clientId = process.env.EBAY_CLIENT_ID;
   const clientSecret = process.env.EBAY_CLIENT_SECRET;
@@ -36,7 +37,7 @@ async function getEbayAccessToken() {
   }
 }
 
-// Helper to precisely query UK marketplace solds using card name, number, set, language, and grade
+// Helper to precisely query UK marketplace solds using card name, clean number, set, language, and grade
 async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, gradeTier) {
   const token = await getEbayAccessToken();
   if (!token) return null;
@@ -47,16 +48,13 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
       .replace(/ex\b/gi, "ex")
       .trim();
 
-    let preciseNumber = cardNumber || "";
-    if (preciseNumber && !preciseNumber.includes("/")) {
-      if (preciseNumber === "232") preciseNumber = "232/091";
-    }
+    // Extract base number without slash (e.g. "232/091" -> "232") to match real collector listing titles safely
+    let cleanNumber = cardNumber ? cardNumber.split('/')[0] : "";
     
-    const exactNumberQuery = preciseNumber ? `"${preciseNumber}"` : "";
-    const queryParts = [cleanName, exactNumberQuery, setName, language, gradeTier].filter(Boolean);
+    const queryParts = [cleanName, cleanNumber, setName, language, gradeTier].filter(Boolean);
     const searchQuery = encodeURIComponent(queryParts.join(" "));
     
-    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=15`;
+    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=20`;
 
     const response = await fetch(url, {
       headers: {
@@ -74,7 +72,8 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
     for (const item of data.itemSummaries) {
       if (item.price && item.price.value) {
         const val = parseFloat(item.price.value);
-        if (!isNaN(val) && val > 0) {
+        // Filter out low-end accessory/proxy noise (< £40) when looking for real graded card valuations
+        if (!isNaN(val) && val > 40) {
           prices.push(val);
         }
       }

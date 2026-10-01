@@ -41,13 +41,13 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log("OTPTCG metric grading request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG strict metric grading request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
     // =========================================================
-    // 3. CALL GEMINI API WITH METRIC SPATIAL PROMPTING
+    // 3. CALL GEMINI API WITH ENFORCED METRIC FIELDS
     // =========================================================
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
@@ -58,10 +58,11 @@ export default async function handler(req, res) {
             {
               text: `You are a master trading card grading inspector and optical metrology expert. Perform a rigorous physical measurement analysis of the provided front and back card images.
 
-              CRITICAL METRIC & CENTERING RULES:
+              CRITICAL ENFORCEMENT RULES FOR CENTERING:
               - Standard TCG cards measure precisely 63mm wide by 88mm tall. Use this physical scale as your baseline.
-              - Visually calculate the precise physical width of the borders in millimeters (mm) for top, bottom, left, and right on both the front and back images.
-              - Provide exact millimeter measurements (e.g., "1.2 mm") for each border, alongside percentage distributions and visual ratios.
+              - ABSOLUTE REQUIREMENT: You MUST populate every single sub-field for frontCentering and backCentering ('top', 'bottom', 'left', 'right', and 'ratio'). 
+              - NEVER leave 'top', 'bottom', 'left', or 'right' blank, null, or as dashes. 
+              - Each directional field must contain an exact physical measurement string in millimeters (e.g. "1.5 mm"). 
               - Treat the card as authentic. Ignore plastic glare, dust on sleeves, or reflections from holders.
               - Provide granular details for corner micro-chipping, edge whitening/silvering, and surface hairline scratches.`
             },
@@ -119,17 +120,17 @@ export default async function handler(req, res) {
             recommendationReason: { type: Type.STRING, description: "Actionable advice on submission value." },
             gradeSummary: { type: Type.STRING, description: "Comprehensive executive summary of the card's physical condition." },
 
-            // METRIC DIAGNOSTICS
+            // DIAGNOSTICS WITH STRICT STRINGS
             diagnostics: {
               type: Type.OBJECT,
               properties: {
                 frontCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
-                    bottom: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
-                    left: { type: Type.STRING, description: "Border measurement in mm e.g. '2.0 mm'" },
-                    right: { type: Type.STRING, description: "Border measurement in mm e.g. '1.0 mm'" },
+                    top: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
+                    bottom: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
+                    left: { type: Type.STRING, description: "Exact measurement in mm, e.g. '2.0 mm'" },
+                    right: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.0 mm'" },
                     ratio: { type: Type.STRING, description: "Calculated ratio e.g. 60/40" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
@@ -137,10 +138,10 @@ export default async function handler(req, res) {
                 backCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
-                    bottom: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
-                    left: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
-                    right: { type: Type.STRING, description: "Border measurement in mm e.g. '1.5 mm'" },
+                    top: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
+                    bottom: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
+                    left: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
+                    right: { type: Type.STRING, description: "Exact measurement in mm, e.g. '1.5 mm'" },
                     ratio: { type: Type.STRING, description: "Calculated ratio e.g. 50/50" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
@@ -190,7 +191,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG metric grading error:", error);
+    console.error("OTPTCG strict metric grading error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

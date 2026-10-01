@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   
-  // Dynamically echo back whatever headers the browser requests during preflight
   const requestedHeaders = req.headers["access-control-request-headers"];
   res.setHeader(
     "Access-Control-Allow-Headers", 
@@ -44,7 +43,6 @@ export default async function handler(req, res) {
 
     console.log("OTPTCG grading request received. Nonce:", sessionNonce || "none");
 
-    // Clean base64 strings
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
@@ -113,7 +111,7 @@ Analyze the provided front and back images of the trading card and output a stri
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.8-flash",
       contents: [
         {
           role: "user",

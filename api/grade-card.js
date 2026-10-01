@@ -1,13 +1,31 @@
 const { GoogleGenAI } = require("@google/genai");
 
-// Configure Vercel body parser limit to 10MB to safely handle card image payloads
+// Disable default body parser to process raw image streams safely without size limits
 export const config = {
   api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
+    bodyParser: false,
   },
 };
+
+// Helper to read raw stream body safely
+async function parseRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => {
+      data += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(data));
+      } catch (err) {
+        reject(new Error("Invalid JSON body payload received."));
+      }
+    });
+    req.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
 
 module.exports = async function handler(req, res) {
   // =========================================================
@@ -33,8 +51,9 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "GEMINI_API_KEY is missing from Vercel environment variables." });
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const { frontImage, backImage, sessionNonce } = req.body || {};
+    // Parse the incoming body manually to avoid size restrictions
+    const body = await parseRawBody(req);
+    const { frontImage, backImage, sessionNonce } = body || {};
 
     if (!frontImage || !backImage) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
@@ -44,6 +63,8 @@ module.exports = async function handler(req, res) {
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
     const prompt = `
 You are a master trading card grading inspector. Analyze the provided front and back card images. 
@@ -116,7 +137,6 @@ Return ONLY a valid raw JSON object. Do not wrap the JSON in markdown code block
       throw new Error("No response received from the grading model.");
     }
 
-    // Robust cleaning to strip potential markdown formatting if the model includes it
     let cleanedJSON = rawText.trim();
     if (cleanedJSON.startsWith("```json")) {
       cleanedJSON = cleanedJSON.replace(/^```json/, "").replace(/```$/, "").trim();

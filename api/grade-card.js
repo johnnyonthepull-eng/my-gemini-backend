@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG metric fallback request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG decimal metric request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -47,7 +47,7 @@ export default async function handler(req, res) {
 
               CRITICAL MEASUREMENT RULES:
               - Standard TCG cards measure precisely 63mm wide by 88mm tall. 
-              - You MUST provide explicit millimeter values for top, bottom, left, and right borders for both front and back (e.g., "1.5 mm"). Never leave them blank.`
+              - You MUST provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm", "2.10 mm", "0.95 mm") for every single top, bottom, left, and right border field. Never use integers, dashes, or blank fields.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -95,22 +95,22 @@ export default async function handler(req, res) {
                 frontCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    bottom: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    left: { type: Type.STRING, description: "e.g. '2.0 mm'" },
-                    right: { type: Type.STRING, description: "e.g. '1.0 mm'" },
-                    ratio: { type: Type.STRING, description: "e.g. '51/49'" }
+                    top: { type: Type.STRING, description: "Decimal measurement e.g. '1.45 mm'" },
+                    bottom: { type: Type.STRING, description: "Decimal measurement e.g. '1.55 mm'" },
+                    left: { type: Type.STRING, description: "Decimal measurement e.g. '2.10 mm'" },
+                    right: { type: Type.STRING, description: "Decimal measurement e.g. '1.90 mm'" },
+                    ratio: { type: Type.STRING, description: "Calculated ratio e.g. '53/47'" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
                 backCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    bottom: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    left: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    right: { type: Type.STRING, description: "e.g. '1.5 mm'" },
-                    ratio: { type: Type.STRING, description: "e.g. '53/47'" }
+                    top: { type: Type.STRING, description: "Decimal measurement e.g. '1.50 mm'" },
+                    bottom: { type: Type.STRING, description: "Decimal measurement e.g. '1.50 mm'" },
+                    left: { type: Type.STRING, description: "Decimal measurement e.g. '1.75 mm'" },
+                    right: { type: Type.STRING, description: "Decimal measurement e.g. '1.25 mm'" },
+                    ratio: { type: Type.STRING, description: "Calculated ratio e.g. '50/50'" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
@@ -151,28 +151,37 @@ export default async function handler(req, res) {
     const parsedResult = JSON.parse(rawText);
 
     // =========================================================
-    // 4. BACKEND SANITIZATION & SAFEGUARD FALLBACK
+    // 4. BACKEND DECIMAL FORMATTING SAFEGUARD
     // =========================================================
+    const ensureDecimalMm = (val) => {
+      if (!val || val === "—" || val.trim() === "") return "1.50 mm";
+      // If it's already got letters/units like "1.5 mm" or "1.50 mm", normalize it
+      const cleaned = val.replace(/[^0-9.]/g, "");
+      const num = parseFloat(cleaned);
+      if (isNaN(num)) return "1.50 mm";
+      return `${num.toFixed(2)} mm`;
+    };
+
     if (parsedResult.diagnostics && parsedResult.diagnostics.frontCentering) {
       const fc = parsedResult.diagnostics.frontCentering;
-      if (!fc.top || fc.top === "—" || fc.top.trim() === "") fc.top = "1.5 mm";
-      if (!fc.bottom || fc.bottom === "—" || fc.bottom.trim() === "") fc.bottom = "1.5 mm";
-      if (!fc.left || fc.left === "—" || fc.left.trim() === "") fc.left = "1.5 mm";
-      if (!fc.right || fc.right === "—" || fc.right.trim() === "") fc.right = "1.5 mm";
+      fc.top = ensureDecimalMm(fc.top);
+      fc.bottom = ensureDecimalMm(fc.bottom);
+      fc.left = ensureDecimalMm(fc.left);
+      fc.right = ensureDecimalMm(fc.right);
     }
 
     if (parsedResult.diagnostics && parsedResult.diagnostics.backCentering) {
       const bc = parsedResult.diagnostics.backCentering;
-      if (!bc.top || bc.top === "—" || bc.top.trim() === "") bc.top = "1.5 mm";
-      if (!bc.bottom || bc.bottom === "—" || bc.bottom.trim() === "") bc.bottom = "1.5 mm";
-      if (!bc.left || bc.left === "—" || bc.left.trim() === "") bc.left = "1.5 mm";
-      if (!bc.right || bc.right === "—" || bc.right.trim() === "") bc.right = "1.5 mm";
+      bc.top = ensureDecimalMm(bc.top);
+      bc.bottom = ensureDecimalMm(bc.bottom);
+      bc.left = ensureDecimalMm(bc.left);
+      bc.right = ensureDecimalMm(bc.right);
     }
 
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG fallback error:", error);
+    console.error("OTPTCG decimal metric error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -47,84 +47,23 @@ export default async function handler(req, res) {
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
     // =========================================================
-    // 3. CALL GEMINI API FOR IDENTIFICATION & GRADING
+    // 3. CALL GEMINI API WITH STRICT DETAILED SCHEMA
     // =========================================================
-    const prompt = `
-You are an expert trading card archivist and professional grading assistant (PSA, Beckett/BGS, ACE Grading) specializing in English, Japanese, and Simplified Chinese trading cards. 
-
-CORE DIRECTIVES:
-1. **ABSOLUTE IDENTIFICATION:** Your primary job is to identify the card precisely (Name, Set, Card Number, Rarity, Language, Variant) using its artwork, set symbols, and numbering. Never refuse to identify a card.
-2. **ZERO FAKE CHECKING:** You are a grading and identification tool, NOT an anti-counterfeit officer. Never flag a card as fake, counterfeit, or suspicious. Always treat the item as a genuine collectible, set "isAuthentic": true, and output a full grading report.
-3. **PROTECTIVE HOLDERS:** Cards may be scanned inside penny sleeves, tolopaders, or semi-rigids. Disregard surface reflections or light glare from the plastic holder when evaluating condition.
-4. **COMPLETENESS:** You MUST populate every single field, subgrade, measurement, score, and analytic reason below. Never leave anything missing or blank.
-
-Analyze the provided front and back images and output a strict JSON object (no markdown formatting, raw JSON only) matching this exact schema:
-
-{
-  "cardName": "string (exact accurate card name)",
-  "setName": "string (exact official set name)",
-  "cardNumber": "string (exact collector number, e.g. 025/198)",
-  "rarity": "string (exact card rarity)",
-  "language": "string (English / Japanese / Simplified Chinese)",
-  "variant": "string (e.g. Holofoil, Reverse Holo, Base)",
-  "identificationConfidence": "string (e.g. 99%)",
-  "isAuthentic": true,
-  "psa": {
-    "grade": "string (e.g. GEM MINT 10, PSA 9, PSA 8)",
-    "confidence": "string (e.g. 95%)",
-    "reason": "string detailing precise justification for this PSA grade based on corners, edges, surface, and centering"
-  },
-  "bgs": {
-    "grade": "string (e.g. BGS 9.5, BGS 9)",
-    "confidence": "string (e.g. 95%)",
-    "subgrades": {
-      "centering": "string (e.g. 9.5)",
-      "corners": "string (e.g. 9.5)",
-      "edges": "string (e.g. 9.0)",
-      "surface": "string (e.g. 9.5)"
-    },
-    "reason": "string breaking down the subgrade evaluations"
-  },
-  "ace": {
-    "grade": "string (e.g. ACE 9)",
-    "confidence": "string (e.g. 95%)",
-    "reason": "string detailing the Ace grade rationale"
-  },
-  "recommendation": {
-    "service": "string (PSA / BGS / ACE)",
-    "verdict": "string (Grade / Raw / Pass)",
-    "reason": "string advising the best grading path and reminding the user to safely remove the card from its holder prior to final submission."
-  },
-  "gradeSummary": "string providing a comprehensive, data-driven summary of the card's condition across all four grading pillars.",
-  "diagnostics": {
-    "frontCentering": {
-      "top": "string (e.g. 48%)",
-      "bottom": "string (e.g. 52%)",
-      "left": "string (e.g. 49%)",
-      "right": "string (e.g. 51%)",
-      "ratio": "string (e.g. 49/51)"
-    },
-    "backCentering": {
-      "top": "string (e.g. 50%)",
-      "bottom": "string (e.g. 50%)",
-      "left": "string (e.g. 50%)",
-      "right": "string (e.g. 50%)",
-      "ratio": "string (e.g. 50/50)"
-    },
-    "cornerFlaws": ["array of specific observations or ['Clean corners']"],
-    "edgeFlaws": ["array of specific observations or ['Clean edges']"],
-    "surfaceFlaws": ["array of specific observations or ['Clean surface']"]
-  }
-}
-`;
-
     const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
       contents: [
         {
           role: "user",
           parts: [
-            { text: prompt },
+            {
+              text: `You are a master trading card grading inspector. Analyze the provided front and back card images. 
+              
+              CRITICAL RULES:
+              - DO NOT leave any fields blank, use dashes, or use lazy placeholders. Every single text field must contain rich, detailed professional grading data.
+              - Treat the card as 100% authentic. Ignore plastic glare/reflections from sleeves, toploaders, or holders.
+              - Provide deep, descriptive analysis for corners, edges, and surface flaws instead of just saying "Clean". Describe micro-details (e.g., slight corner crispness, microscopic edge chipping, print lines, gloss condition).
+              - Provide exact percentage estimates for all individual centering sides (top, bottom, left, right) rather than leaving them blank.`
+            },
             {
               inlineData: {
                 mimeType: "image/jpeg",
@@ -139,7 +78,118 @@ Analyze the provided front and back images and output a strict JSON object (no m
             }
           ]
         }
-      ]
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            cardName: { type: Type.STRING, description: "Exact card name" },
+            setName: { type: Type.STRING, description: "Official set name" },
+            cardNumber: { type: Type.STRING, description: "Collector number e.g. 025/198" },
+            rarity: { type: Type.STRING, description: "Card rarity" },
+            language: { type: Type.STRING, description: "English, Japanese, or Simplified Chinese" },
+            variant: { type: Type.STRING, description: "Holofoil, Reverse, etc." },
+            identificationConfidence: { type: Type.STRING, description: "Confidence percentage e.g. 99%" },
+            isAuthentic: { type: Type.BOOLEAN, description: "Always true" },
+            psa: {
+              type: Type.OBJECT,
+              properties: {
+                grade: { type: Type.STRING, description: "PSA estimated grade e.g. GEM MINT 10 or PSA 9" },
+                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+                reason: { type: Type.STRING, description: "Thorough paragraph explaining why this PSA grade was awarded based on corners, edges, and surface." }
+              },
+              required: ["grade", "confidence", "reason"]
+            },
+            bgs: {
+              type: Type.OBJECT,
+              properties: {
+                grade: { type: Type.STRING, description: "BGS estimated grade e.g. BGS 9.5" },
+                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+                subgrades: {
+                  type: Type.OBJECT,
+                  properties: {
+                    centering: { type: Type.STRING, description: "Subgrade score e.g. 9.5" },
+                    corners: { type: Type.STRING, description: "Subgrade score e.g. 9.5" },
+                    edges: { type: Type.STRING, description: "Subgrade score e.g. 9.0" },
+                    surface: { type: Type.STRING, description: "Subgrade score e.g. 9.5" }
+                  },
+                  required: ["centering", "corners", "edges", "surface"]
+                },
+                reason: { type: Type.STRING, description: "Detailed subgrade breakdown rationale." }
+              },
+              required: ["grade", "confidence", "subgrades", "reason"]
+            },
+            ace: {
+              type: Type.OBJECT,
+              properties: {
+                grade: { type: Type.STRING, description: "ACE grade e.g. ACE 9" },
+                confidence: { type: Type.STRING, description: "Confidence percentage e.g. 95%" },
+                reason: { type: Type.STRING, description: "Detailed ACE rationale." }
+              },
+              required: ["grade", "confidence", "reason"]
+            },
+            recommendation: {
+              type: Type.OBJECT,
+              properties: {
+                service: { type: Type.STRING, description: "Recommended grading service e.g. PSA" },
+                verdict: { type: Type.STRING, description: "Grade / Raw / Pass" },
+                reason: { type: Type.STRING, description: "Actionable advice on submission value and instruction to remove from holder before final send-in." }
+              },
+              required: ["service", "verdict", "reason"]
+            },
+            gradeSummary: { type: Type.STRING, description: "Comprehensive, multi-sentence executive summary of the card's physical condition." },
+            diagnostics: {
+              type: Type.OBJECT,
+              properties: {
+                frontCentering: {
+                  type: Type.OBJECT,
+                  properties: {
+                    top: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    bottom: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    left: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    right: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    ratio: { type: Type.STRING, description: "Ratio e.g. 50/50" }
+                  },
+                  required: ["top", "bottom", "left", "right", "ratio"]
+                },
+                backCentering: {
+                  type: Type.OBJECT,
+                  properties: {
+                    top: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    bottom: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    left: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    right: { type: Type.STRING, description: "Must be a clear percentage e.g. 50%" },
+                    ratio: { type: Type.STRING, description: "Ratio e.g. 50/50" }
+                  },
+                  required: ["top", "bottom", "left", "right", "ratio"]
+                },
+                cornerFlaws: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Detailed descriptions of corner condition (e.g. Sharp 90-degree corners, pristine points, zero whitening observed)"
+                },
+                edgeFlaws: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Detailed descriptions of edge condition (e.g. Clean borders, minor factory cut texture along top edge)"
+                },
+                surfaceFlaws: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Detailed descriptions of surface condition (e.g. Glossy finish, vibrant foil reflection, no scratching or print lines)"
+                }
+              },
+              required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
+            }
+          },
+          required: [
+            "cardName", "setName", "cardNumber", "rarity", "language", 
+            "variant", "identificationConfidence", "isAuthentic", "psa", 
+            "bgs", "ace", "recommendation", "gradeSummary", "diagnostics"
+          ]
+        }
+      }
     });
 
     const rawText = response.text;
@@ -147,12 +197,7 @@ Analyze the provided front and back images and output a strict JSON object (no m
       throw new Error("No response received from the grading model.");
     }
 
-    const cleanedJSON = rawText
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
-    const parsedResult = JSON.parse(cleanedJSON);
+    const parsedResult = JSON.parse(rawText);
 
     // =========================================================
     // 4. RETURN SUCCESS RESPONSE

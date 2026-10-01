@@ -1,3 +1,5 @@
+import { GoogleGenAI } from "@google/genai";
+
 export default async function handler(req, res) {
   // Absolute CORS & Cache-Control headers
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -36,7 +38,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
+    // Initialize the official Google Gen AI SDK
+    const ai = new GoogleGenAI({ apiKey: apiKey });
 
     const promptText = `SESSION_NONCE: ${sessionNonce || Date.now()}
 You are a forensic TCG grading scientist and senior authenticator. Perform a completely fresh, independent, isolated evaluation of the newly uploaded images. Do not carry over or assume any data from previous card uploads. 
@@ -80,52 +83,35 @@ Return ONLY a valid JSON object matching this exact key structure:
   "surfaceFlaws": "Precise analytical breakdown of foil sheen, texture alignment, microscopic hairline scuffs, or refractive print lines."
 }`;
 
-    const geminiResponse = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: frontBase64Data
-                }
-              },
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: backBase64Data
-                }
+    // Call Gemini using the official SDK model interface
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: frontBase64Data
               }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.3
+            },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: backBase64Data
+              }
+            }
+          ]
         }
-      })
+      ],
+      config: {
+        temperature: 0.3
+      }
     });
 
-    const responseText = await geminiResponse.text();
-
-    if (!geminiResponse.ok) {
-      console.error("Gemini API rejected request:", responseText);
-      return res.status(502).json({ error: "Google API Failed: " + responseText });
-    }
-
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseErr) {
-      return res.status(500).json({ error: "Failed to parse JSON response envelope from Gemini." });
-    }
-
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const rawText = response.text();
     if (!rawText) {
       return res.status(500).json({ error: "No text generated from the Gemini model." });
     }

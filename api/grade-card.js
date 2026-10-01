@@ -82,7 +82,7 @@ Return ONLY a valid JSON object matching this exact key structure:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3-flash-preview",
       contents: [
         {
           role: "user",
@@ -108,7 +108,14 @@ Return ONLY a valid JSON object matching this exact key structure:
       }
     });
 
-    const rawText = response.text;
+    // Safely extract text supporting both property and method signatures across SDK versions
+    let rawText = "";
+    if (typeof response.text === "function") {
+      rawText = response.text();
+    } else {
+      rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
     if (!rawText) {
       return res.status(500).json({ error: "No text generated from the Gemini model." });
     }
@@ -120,7 +127,7 @@ Return ONLY a valid JSON object matching this exact key structure:
       parsedCardData = JSON.parse(cleanJsonString);
     } catch (err) {
       console.error("JSON parse error on model text:", cleanJsonString);
-      return res.status(500).json({ error: "Model failed to output clean JSON structure." });
+      return res.status(500).json({ error: "Model failed to output clean JSON structure: " + rawText });
     }
 
     return res.status(200).json(parsedCardData);

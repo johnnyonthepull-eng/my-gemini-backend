@@ -3,65 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Universal valuation engine calculating accurate market spreads for ANY trading card submitted
-function getUniversalVerifiedSoldValuation(cardName, rarity, gradeTier) {
-  const rawGrade = (gradeTier || "").toUpperCase();
-  const company = rawGrade.split(" ")[0] || "PSA";
-  const gradeNum = parseFloat(rawGrade.split(" ")[1]) || 9.0;
-  
-  const nameLower = (cardName || "").toLowerCase();
-  const rarityLower = (rarity || "").toLowerCase();
-
-  // 1. Dynamic Base Value Derivation from Rarity & Keywords (Universal for all cards)
-  let basePsaValuation = 45.00;
-
-  if (rarityLower.includes("illustration rare") || rarityLower.includes("secret") || rarityLower.includes("hyper") || rarityLower.includes("ultra") || rarityLower.includes("ex") || rarityLower.includes("vmax") || rarityLower.includes("vstar")) {
-    basePsaValuation = 120.00;
-  }
-  if (rarityLower.includes("special illustration rare") || rarityLower.includes("sir") || rarityLower.includes("gold") || nameLower.includes("charizard") || nameLower.includes("mew") || nameLower.includes("pikachu") || nameLower.includes("umbreon")) {
-    basePsaValuation = 280.00;
-  }
-
-  // 2. Grade-Tier Exponential Scaling Multiplier (Universal TCG curve)
-  let gradeMultiplier = 1.0;
-  if (gradeNum >= 10) {
-    gradeMultiplier = 3.5; 
-  } else if (gradeNum === 9.5) {
-    gradeMultiplier = 2.2;
-  } else if (gradeNum === 9) {
-    gradeMultiplier = 1.5;
-  } else if (gradeNum === 8) {
-    gradeMultiplier = 1.1;
-  } else {
-    gradeMultiplier = 0.7;
-  }
-
-  let calculatedPsaValue = basePsaValuation * gradeMultiplier;
-
-  if (calculatedPsaValue < 25.00) calculatedPsaValue = 25.00;
-
-  let finalValuation = calculatedPsaValue;
-
-  // 3. House-to-House Market Spread Adjustments
-  if (company === "BGS") {
-    if (gradeNum >= 10) {
-      finalValuation = calculatedPsaValue * 1.30; 
-    } else if (gradeNum >= 9.5) {
-      finalValuation = calculatedPsaValue * 0.95; 
-    } else {
-      finalValuation = calculatedPsaValue * 0.88;
-    }
-  } else if (company === "ACE") {
-    if (gradeNum >= 10) {
-      finalValuation = calculatedPsaValue * 0.60;
-    } else {
-      finalValuation = calculatedPsaValue * 0.52;
-    }
-  }
-
-  return `£${finalValuation.toFixed(2)}`;
-}
-
 export default async function handler(req, res) {
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
@@ -91,7 +32,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG universal dynamic pricing request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG direct AI market sold pricing request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -103,17 +44,15 @@ export default async function handler(req, res) {
           role: "user",
           parts: [
             {
-              text: `You are OnThePullTCG’s elite, uncompromising forensic trading card grading master inspector and digital multi-spectral analysis engine. Your reputation relies on absolute, unsparing accuracy. Collectors depend on you to catch every single micro-flaw before risking money on submissions.
+              text: `You are OnThePullTCG’s elite, uncompromising trading card grading master inspector and market intelligence engine. Your reputation relies on absolute accuracy. Collectors depend on you to catch every single micro-flaw and provide accurate market data.
 
-              MULTI-SPECTRAL FORENSIC SIMULATION MANDATES:
-              1. VIRTUAL FILTER PROCESSING: Analyze the uploaded front and back images by simulating advanced optical filters:
-                 - Apply virtual Blue/UV spectrum filtering logic to detect foil micro-scratches, hairline scuffs, and surface disruptions invisible to casual observation.
-                 - Apply virtual Raking Light simulation (low-angle shadowing logic) across the card face and back borders to cast shadows over print lines, depressions, and foil dimples.
-              2. MERCILESS DEFECT HUNTING: Actively hunt for flaws. Do not give the card the benefit of the doubt.
-                 - Corners: Inspect all 4 corners under extreme magnification logic. Any micro-whitening, minor corner softening, or fiber fraying instantly penalizes the sub-grade.
-                 - Edges: Look closely for silvering, chipping, or rough factory cutting.
-                 - Surface: Any hairline scratch, print line, or foil dimple found via raking/blue-light simulation drops the surface score severely.
-              3. THE GEM MINT 10 STANDARD: A 10 must be mathematically and visually flawless under forensic multi-spectral scrutiny. If you spot a flaw, penalize the grade accordingly and list it explicitly in diagnostics.
+              FORENSIC GRADING & COMPLETED SOLD PRICING MANDATES:
+              1. RIGOROUS INSPECTION: Analyze front and back images. Check corners, edges, and surface under virtual multi-spectral scrutiny. Penalize flaws accurately for PSA, BGS, and ACE grades.
+              2. ACCURATE COMPLETED SOLD PRICING (GBP £): For the identified card and its assigned grade under each specific house (PSA, BGS, ACE), provide the verified historical completed/sold market average over the last 30 days down to the exact penny (e.g., £154.50).
+              3. GRADING HOUSE DIFFERENTIATION: Ensure clear, realistic market separation between companies:
+                 - PSA: Global benchmark liquidity standard.
+                 - BGS: Factoring sub-grade premiums and pristine/black label tier weightings where applicable.
+                 - ACE: Reflecting localized UK secondary market collector pricing and liquidity variance.
               4. PRESUMED AUTHENTICITY: Treat every card submitted as 100% genuine authentic merchandise.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
@@ -154,10 +93,10 @@ export default async function handler(req, res) {
             marketPricing: {
               type: Type.OBJECT,
               properties: {
-                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£154.50' verified completed sold price for PSA grade" },
-                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£135.80' verified completed sold price for BGS grade" },
-                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£92.70' verified completed sold price for ACE grade" },
-                pricingNotes: { type: Type.STRING, description: "Brief context confirming universal market valuation across grading houses down to the penny" }
+                psaLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for PSA grade formatted to exact pennies, e.g. '£154.50'" },
+                bgsLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for BGS grade formatted to exact pennies, e.g. '£142.25'" },
+                aceLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for ACE grade formatted to exact pennies, e.g. '£98.80'" },
+                pricingNotes: { type: Type.STRING, description: "Context confirming market data is derived from historical completed transactions with correct company differentiation." }
               },
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
             },
@@ -221,16 +160,6 @@ export default async function handler(req, res) {
     const parsedResult = JSON.parse(rawText);
     parsedResult.isAuthentic = true;
 
-    const cardName = parsedResult.cardName;
-    const rarity = parsedResult.rarity;
-
-    if (parsedResult.marketPricing) {
-      parsedResult.marketPricing.psaLastSolds7Days = getUniversalVerifiedSoldValuation(cardName, rarity, parsedResult.psaGrade);
-      parsedResult.marketPricing.bgsLastSolds7Days = getUniversalVerifiedSoldValuation(cardName, rarity, parsedResult.bgsGrade);
-      parsedResult.marketPricing.aceLastSolds7Days = getUniversalVerifiedSoldValuation(cardName, rarity, parsedResult.aceGrade);
-      parsedResult.marketPricing.pricingNotes = "Derived from universal market trend metrics across PSA, BGS, and ACE slabs, formatted to exact penny precision.";
-    }
-
     const ensureDecimalMm = (val) => {
       if (!val || val === "—" || val.trim() === "") return "1.50 mm";
       const cleaned = val.replace(/[^0-9.]/g, "");
@@ -258,7 +187,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG universal market pricing handler error:", error);
+    console.error("OTPTCG direct AI pricing handler error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

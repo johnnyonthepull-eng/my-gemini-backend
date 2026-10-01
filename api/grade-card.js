@@ -1,139 +1,157 @@
 import { GoogleGenAI } from "@google/genai";
 
+// Initialize the Gemini client using Vercel environment variables
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // =========================================================
+  // 1. CORS HEADERS & PREFLIGHT HANDLING
+  // =========================================================
+  const allowedOrigin = req.headers.origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Cache-Control, Pragma");
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
-    return res.status(200).end();
+    return res.status(204).end();
   }
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({
+      error: "Method not allowed"
+    });
   }
 
   try {
+    // =========================================================
+    // 2. PARSE REQUEST PAYLOAD
+    // =========================================================
     const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({ error: "Missing frontImage or backImage payload." });
+      return res.status(400).json({
+        error: "Both frontImage and backImage are required."
+      });
     }
 
-    const cleanBase64 = (dataUrl) => {
-      if (typeof dataUrl !== 'string') return '';
-      if (dataUrl.includes(",")) {
-        return dataUrl.split(",")[1].trim();
-      }
-      return dataUrl.trim();
-    };
+    console.log("OTPTCG grading request received. Nonce:", sessionNonce || "none");
 
-    const frontBase64Data = cleanBase64(frontImage);
-    const backBase64Data = cleanBase64(backImage);
+    // Clean base64 strings (strip out data URL prefixes if present)
+    const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
+    const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "Server configuration error: GEMINI_API_KEY is missing." });
-    }
+    // =========================================================
+    // 3. CALL GEMINI API FOR CARD ANALYSIS & GRADING
+    // =========================================================
+    const prompt = `
+You are an expert trading card authenticator and professional grader specializing in Pokémon and trading cards (PSA, Beckett/BGS, ACE Grading). 
+Analyze the provided front and back images of the trading card and output a strict JSON object (no markdown formatting, raw JSON only) matching this exact schema:
 
-    const ai = new GoogleGenAI({ apiKey: apiKey });
-
-    const promptText = `SESSION_NONCE: ${sessionNonce || Date.now()}
-You are a forensic TCG grading scientist and senior authenticator. Perform a completely fresh, independent, analytical evaluation of the newly uploaded images. Do not carry over or assume any data from previous card uploads.
-
-CLINICAL & ANALYTIC PROTOCOLS:
-1. PRECISE MEASUREMENTS: Calculate front and back border widths down to the tenth of a millimeter (e.g., "1.9 mm") and compute precise centering ratios.
-2. GRANULAR FLAW MAPPING: For corners, edges, and surface, specify the exact quadrant or location of any micro-defect. You are strictly forbidden from writing "None detected". Detail actual texture lines, micro-whitening, or fiber traits.
-3. SUBGRADE MATHEMATICS: Provide rigorous sub-grades for BGS where Corners, Edges, Surface, and Centering dictate the score.
-4. RIGOROUS JUSTIFICATIONS: Link every grade ceiling directly to physical evidence observed under simulated magnification.
-
-Return ONLY a valid JSON object matching this exact key structure:
 {
-  "cardName": "Exact character name and designation",
-  "setName": "Exact expansion set name",
-  "cardNumber": "Exact card number / set code",
-  "rarity": "Exact rarity tier",
-  "language": "Detected language",
-  "variant": "Finish variant description",
-  "confidence": "99.8%",
-  "psaGrade": "8",
-  "psaLabel": "Clinical breakdown citing specific tolerance deviations and microscopic surface/corner restrictions.",
-  "bgsGrade": "8.5",
-  "bgsSubgrades": "C: 9.5 | Cr: 8.5 | E: 9.0 | S: 8.0",
-  "aceGrade": "8",
-  "aceLabel": "Analytical assessment detailing structural and finish limitations.",
-  "recGrade": "PSA",
-  "recLabel": "Strategic market liquidity vs. condition penalty analysis.",
-  "conditionSummary": "An exhaustive, highly analytical paragraph detailing the card's micro-structural integrity and the exact clinical reasons capping its maximum grade.",
-  "frontTop": "1.9 mm",
-  "frontBottom": "2.1 mm",
-  "frontLeft": "2.2 mm",
-  "frontRight": "1.8 mm",
-  "frontRatio": "55/45",
-  "backTop": "1.8 mm",
-  "backBottom": "2.2 mm",
-  "backLeft": "2.0 mm",
-  "backRight": "2.4 mm",
-  "backRatio": "45/55",
-  "cornerFlaws": "Precise analytical breakdown of all 4 corners, specifying fiber compression, microscopic whitening, or die-cut sharpness.",
-  "edgeFlaws": "Precise analytical breakdown of border edges, detailing factory knife track marks, silvering, or micro-chipping.",
-  "surfaceFlaws": "Precise analytical breakdown of foil sheen, texture alignment, microscopic hairline scuffs, or refractive print lines."
-}`;
+  "cardName": "string",
+  "setName": "string",
+  "cardNumber": "string",
+  "rarity": "string",
+  "language": "string",
+  "variant": "string",
+  "identificationConfidence": "string (e.g. 98%)",
+  "psa": {
+    "grade": "string (e.g. 9 or GEM MINT 10)",
+    "confidence": "string",
+    "reason": "string"
+  },
+  "bgs": {
+    "grade": "string",
+    "confidence": "string",
+    "subgrades": {
+      "centering": "string",
+      "corners": "string",
+      "edges": "string",
+      "surface": "string"
+    },
+    "reason": "string"
+  },
+  "ace": {
+    "grade": "string",
+    "confidence": "string",
+    "reason": "string"
+  },
+  "recommendation": {
+    "service": "string (e.g. PSA / BGS / ACE)",
+    "verdict": "string (e.g. Grade / Raw / Pass)",
+    "reason": "string"
+  },
+  "gradeSummary": "string",
+  "diagnostics": {
+    "frontCentering": {
+      "top": "string",
+      "bottom": "string",
+      "left": "string",
+      "right": "string",
+      "ratio": "string"
+    },
+    "backCentering": {
+      "top": "string",
+      "bottom": "string",
+      "left": "string",
+      "right": "string",
+      "ratio": "string"
+    },
+    "cornerFlaws": ["array of strings describing corner issues or empty"],
+    "edgeFlaws": ["array of strings describing edge issues or empty"],
+    "surfaceFlaws": ["array of strings describing surface issues or empty"]
+  }
+}
+`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
           parts: [
-            { text: promptText },
+            { text: prompt },
             {
               inlineData: {
                 mimeType: "image/jpeg",
-                data: frontBase64Data
+                data: cleanFront
               }
             },
             {
               inlineData: {
                 mimeType: "image/jpeg",
-                data: backBase64Data
+                data: cleanBack
               }
             }
           ]
         }
-      ],
-      config: {
-        temperature: 0.3
-      }
+      ]
     });
 
-    // Safely extract text supporting both property and method signatures across SDK versions
-    let rawText = "";
-    if (typeof response.text === "function") {
-      rawText = response.text();
-    } else {
-      rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    }
-
+    const rawText = response.text;
     if (!rawText) {
-      return res.status(500).json({ error: "No text generated from the Gemini model." });
+      throw new Error("No response received from the grading model.");
     }
 
-    const cleanJsonString = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    let parsedCardData;
-    
-    try {
-      parsedCardData = JSON.parse(cleanJsonString);
-    } catch (err) {
-      console.error("JSON parse error on model text:", cleanJsonString);
-      return res.status(500).json({ error: "Model failed to output clean JSON structure: " + rawText });
-    }
+    // Clean potential markdown code blocks from model response
+    const cleanedJSON = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    return res.status(200).json(parsedCardData);
+    const parsedResult = JSON.parse(cleanedJSON);
+
+    // =========================================================
+    // 4. RETURN SUCCESS RESPONSE
+    // =========================================================
+    return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("Server catch error:", error);
-    return res.status(500).json({ error: error.message || "Internal server crash." });
+    console.error("OTPTCG grade-card error:", error);
+    return res.status(500).json({
+      error: error && error.message ? error.message : "Card grading failed."
+    });
   }
 }

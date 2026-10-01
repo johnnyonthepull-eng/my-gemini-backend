@@ -1,11 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export default async function handler(req, res) {
-  // =========================================================
-  // 1. BULLETPROOF CORS & PREFLIGHT HANDLING
-  // =========================================================
+  // Always attach CORS headers immediately
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Vary", "Origin");
@@ -22,9 +18,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    // =========================================================
-    // 2. PARSE REQUEST PAYLOAD
-    // =========================================================
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured in Vercel environment variables.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
@@ -36,9 +34,6 @@ export default async function handler(req, res) {
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
-    // =========================================================
-    // 3. CALL GEMINI API WITH ACTIVE MODEL & ENFORCED JSON PROMPT
-    // =========================================================
     const prompt = `
 You are a master trading card grading inspector. Analyze the provided front and back card images. 
 Return a strict raw JSON object (no markdown formatting, no code blocks, just raw JSON) matching this exact schema precisely. Do not leave any fields blank or use dashes.
@@ -116,10 +111,6 @@ Return a strict raw JSON object (no markdown formatting, no code blocks, just ra
       .trim();
 
     const parsedResult = JSON.parse(cleanedJSON);
-
-    // =========================================================
-    // 4. RETURN SUCCESS RESPONSE
-    // =========================================================
     return res.status(200).json(parsedResult);
 
   } catch (error) {

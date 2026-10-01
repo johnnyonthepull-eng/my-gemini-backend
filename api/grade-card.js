@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG decimal metric request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG master inspector request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -43,11 +43,16 @@ export default async function handler(req, res) {
           role: "user",
           parts: [
             {
-              text: `You are a master trading card grading inspector and optical metrology expert. Perform a rigorous physical measurement analysis of the provided front and back card images.
+              text: `You are an elite, uncompromising trading card grading master inspector and optical metrology expert working for a premier grading service. 
 
-              CRITICAL MEASUREMENT RULES:
-              - Standard TCG cards measure precisely 63mm wide by 88mm tall. 
-              - You MUST provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm", "2.10 mm", "0.95 mm") for every single top, bottom, left, and right border field. Never use integers, dashes, or blank fields.`
+              CRITICAL INSPECTION MANDATES:
+              1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit, fake, or unauthentic due to camera lighting, sleeve glare, scanning artifacts, or foil reflections. Evaluate condition strictly on its physical merits.
+              2. ULTRA-PRECISION DEFECT ANALYSIS: Inspect the corners, edges, and surfaces with extreme microscopic scrutiny. 
+                 - Corners: Identify micro-chipping, slight rounding, corner layering separation, or bottom-layer whitening.
+                 - Edges: Detect minor edge chipping, silvering, whitening along the back borders, or factory edge rough cutting.
+                 - Surface: Hunt for microscopic hairline scratches, surface print lines, foil dimples, minor indentations, or fingerprint oils.
+              3. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and final grades (PSA, BGS, ACE) based strictly on professional grading standards (e.g., PSA 10 requires pristine gem mint qualities; a single speck of whitening or a hairline scratch drops it to a 9 or lower).
+              4. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -66,29 +71,34 @@ export default async function handler(req, res) {
             language: { type: Type.STRING },
             variant: { type: Type.STRING },
             identificationConfidence: { type: Type.STRING },
-            isAuthentic: { type: Type.BOOLEAN },
+            isAuthentic: { type: Type.BOOLEAN, description: "Must always evaluate to true" },
 
-            psaGrade: { type: Type.STRING },
+            // PSA FIELDS
+            psaGrade: { type: Type.STRING, description: "Precise PSA estimated grade e.g. GEM MINT 10, PSA 9, PSA 8" },
             psaConfidence: { type: Type.STRING },
-            psaReason: { type: Type.STRING },
+            psaReason: { type: Type.STRING, description: "Detailed justification based on exact corner, edge, surface, and centering flaws." },
 
-            bgsGrade: { type: Type.STRING },
+            // BGS FIELDS
+            bgsGrade: { type: Type.STRING, description: "BGS estimated overall grade e.g. BGS 9.5" },
             bgsConfidence: { type: Type.STRING },
-            bgsCenteringSub: { type: Type.STRING },
-            bgsCornersSub: { type: Type.STRING },
-            bgsEdgesSub: { type: Type.STRING },
-            bgsSurfaceSub: { type: Type.STRING },
-            bgsReason: { type: Type.STRING },
+            bgsCenteringSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.5" },
+            bgsCornersSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.0" },
+            bgsEdgesSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.5" },
+            bgsSurfaceSub: { type: Type.STRING, description: "Strict subgrade e.g. 8.5" },
+            bgsReason: { type: Type.STRING, description: "Detailed subgrade breakdown rationale." },
 
+            // ACE FIELDS
             aceGrade: { type: Type.STRING },
             aceConfidence: { type: Type.STRING },
             aceReason: { type: Type.STRING },
 
+            // RECOMMENDATION & SUMMARY
             recommendationService: { type: Type.STRING },
             recommendationVerdict: { type: Type.STRING },
             recommendationReason: { type: Type.STRING },
-            gradeSummary: { type: Type.STRING },
+            gradeSummary: { type: Type.STRING, description: "Comprehensive breakdown of all physical defects found." },
 
+            // DIAGNOSTICS
             diagnostics: {
               type: Type.OBJECT,
               properties: {
@@ -116,15 +126,18 @@ export default async function handler(req, res) {
                 },
                 cornerFlaws: {
                   type: Type.ARRAY,
-                  items: { type: Type.STRING }
+                  items: { type: Type.STRING },
+                  description: "Ultra-precise breakdown for top-left, top-right, bottom-left, bottom-right corners"
                 },
                 edgeFlaws: {
                   type: Type.ARRAY,
-                  items: { type: Type.STRING }
+                  items: { type: Type.STRING },
+                  description: "Ultra-precise breakdown for top, bottom, left, and right card edges"
                 },
                 surfaceFlaws: {
                   type: Type.ARRAY,
-                  items: { type: Type.STRING }
+                  items: { type: Type.STRING },
+                  description: "Ultra-precise breakdown for front and back surface textures, scratches, and print lines"
                 }
               },
               required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
@@ -150,12 +163,12 @@ export default async function handler(req, res) {
 
     const parsedResult = JSON.parse(rawText);
 
-    // =========================================================
-    // 4. BACKEND DECIMAL FORMATTING SAFEGUARD
-    // =========================================================
+    // Force authenticity flag to true always
+    parsedResult.isAuthentic = true;
+
+    // Decimal safeguard formatting
     const ensureDecimalMm = (val) => {
       if (!val || val === "—" || val.trim() === "") return "1.50 mm";
-      // If it's already got letters/units like "1.5 mm" or "1.50 mm", normalize it
       const cleaned = val.replace(/[^0-9.]/g, "");
       const num = parseFloat(cleaned);
       if (isNaN(num)) return "1.50 mm";
@@ -181,7 +194,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG decimal metric error:", error);
+    console.error("OTPTCG master inspector error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

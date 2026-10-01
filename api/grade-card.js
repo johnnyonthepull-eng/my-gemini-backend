@@ -50,7 +50,10 @@ export default async function handler(req, res) {
     // 3. CALL GEMINI API FOR CARD ANALYSIS & GRADING
     // =========================================================
     const prompt = `
-You are an expert trading card authenticator and professional grader specializing in Pokémon and trading cards (PSA, Beckett/BGS, ACE Grading). 
+You are an expert trading card authenticator and professional grader specializing in Pokémon and trading cards (PSA, Beckett/BGS, ACE Grading) across English, Japanese, and Simplified Chinese sets. 
+
+CRITICAL INSTRUCTION: Assume the card is authentic unless there are glaring, undeniable counterfeit flaws (e.g., completely wrong back artwork, incorrect game title, or missing official copyright text). Do NOT flag regional print differences (such as Japanese texture layouts, Simplified Chinese back coloring, or standard border variations) as fakes. 
+
 Analyze the provided front and back images of the trading card and output a strict JSON object (no markdown formatting, raw JSON only) matching this exact schema:
 
 {
@@ -61,6 +64,7 @@ Analyze the provided front and back images of the trading card and output a stri
   "language": "string",
   "variant": "string",
   "identificationConfidence": "string (e.g. 98%)",
+  "isAuthentic": true,
   "psa": {
     "grade": "string (e.g. 9 or GEM MINT 10)",
     "confidence": "string",

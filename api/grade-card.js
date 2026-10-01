@@ -37,12 +37,19 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
   if (!token) return null;
 
   try {
-    // Construct precise search terms combining name, card number, set, language, and grade
-    const queryParts = [cardName, cardNumber, setName, language, gradeTier].filter(Boolean);
+    // 1. Clean up card name terms
+    let cleanName = cardName
+      .replace(/pokemon/gi, "")
+      .replace(/ex\b/gi, "ex")
+      .trim();
+
+    let preciseNumber = cardNumber || "";
+    
+    // 2. Build the precise search query for eBay UK marketplace
+    const queryParts = [cleanName, preciseNumber, setName, language, gradeTier].filter(Boolean);
     const searchQuery = encodeURIComponent(queryParts.join(" "));
     
-    // Search the UK marketplace (EBAY_GB) with a limit of 10 items to average out recent market solds
-    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=10`;
+    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=12`;
 
     const response = await fetch(url, {
       headers: {
@@ -56,21 +63,26 @@ async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language,
     const data = await response.json();
     if (!data.itemSummaries || data.itemSummaries.length === 0) return null;
 
-    let totalPrice = 0;
-    let count = 0;
-
+    let prices = [];
     for (const item of data.itemSummaries) {
       if (item.price && item.price.value) {
         const val = parseFloat(item.price.value);
-        if (!isNaN(val)) {
-          totalPrice += val;
-          count++;
+        // Open range: accept any valid price greater than 0 up to 10 trillion
+        if (!isNaN(val) && val > 0) {
+          prices.push(val);
         }
       }
     }
 
-    if (count === 0) return null;
-    const avg = (totalPrice / count).toFixed(2);
+    if (prices.length === 0) return null;
+
+    // Sort prices and trim extreme high/low anomalies if enough data points exist
+    prices.sort((a, b) => a - b);
+    if (prices.length > 4) {
+      prices = prices.slice(1, prices.length - 1);
+    }
+
+    const avg = (prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2);
     return `£${avg}`;
   } catch (err) {
     console.error("Error fetching eBay market average:", err);
@@ -107,7 +119,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG live precise pricing request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG master precise pricing request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -123,7 +135,7 @@ export default async function handler(req, res) {
 
               CRITICAL INSPECTION & PRICING MANDATES:
               1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit or fake.
-              2. ULTRA-PRECISION CARD METADATA: Accurately extract the exact Card Name, Set Name, Card Number (e.g., 006/165), and Language (e.g., English, Japanese, Simplified Chinese).
+              2. ULTRA-PRECISION CARD METADATA: Accurately extract the exact Card Name, Set Name, Card Number (e.g., 232/091), and Language (e.g., English).
               3. ULTRA-PRECISION DEFECT ANALYSIS: Inspect corners, edges, and surfaces with extreme scrutiny. 
                  - Corners: Micro-chipping, rounding, whitening.
                  - Edges: Chipping, silvering, rough cuts.
@@ -173,9 +185,9 @@ export default async function handler(req, res) {
             marketPricing: {
               type: Type.OBJECT,
               properties: {
-                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£145.00' based on UK market average for this exact card identity and PSA grade" },
-                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£160.00' based on UK market average for this exact card identity and BGS grade" },
-                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£110.00' based on UK market average for this exact card identity and ACE grade" },
+                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£750.00' based on UK market average for this exact card identity and PSA grade" },
+                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£780.00' based on UK market average for this exact card identity and BGS grade" },
+                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£650.00' based on UK market average for this exact card identity and ACE grade" },
                 pricingNotes: { type: Type.STRING, description: "Brief context on matching search precision or trend" }
               },
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]

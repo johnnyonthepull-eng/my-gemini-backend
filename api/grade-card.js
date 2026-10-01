@@ -31,15 +31,18 @@ async function getEbayAccessToken() {
   }
 }
 
-// Helper to query live UK marketplace solds from eBay Browse API
-async function fetchUkEbayMarketAverage(cardQuery, gradeTier) {
+// Helper to precisely query UK marketplace solds using card name, number, set, language, and grade
+async function fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, gradeTier) {
   const token = await getEbayAccessToken();
   if (!token) return null;
 
   try {
-    const searchQuery = encodeURIComponent(`\({cardQuery}\){gradeTier}`);
-    // Search completed/sold or active listings on the UK marketplace (EBAY_GB)
-    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=5`;
+    // Construct precise search terms combining name, card number, set, language, and grade
+    const queryParts = [cardName, cardNumber, setName, language, gradeTier].filter(Boolean);
+    const searchQuery = encodeURIComponent(queryParts.join(" "));
+    
+    // Search the UK marketplace (EBAY_GB) with a limit of 10 items to average out recent market solds
+    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=10`;
 
     const response = await fetch(url, {
       headers: {
@@ -104,7 +107,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG live pricing & inspector request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG live precise pricing request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -120,13 +123,13 @@ export default async function handler(req, res) {
 
               CRITICAL INSPECTION & PRICING MANDATES:
               1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit or fake.
-              2. ULTRA-PRECISION DEFECT ANALYSIS: Inspect corners, edges, and surfaces with extreme scrutiny. 
+              2. ULTRA-PRECISION CARD METADATA: Accurately extract the exact Card Name, Set Name, Card Number (e.g., 006/165), and Language (e.g., English, Japanese, Simplified Chinese).
+              3. ULTRA-PRECISION DEFECT ANALYSIS: Inspect corners, edges, and surfaces with extreme scrutiny. 
                  - Corners: Micro-chipping, rounding, whitening.
                  - Edges: Chipping, silvering, rough cuts.
                  - Surface: Hairlines, print lines, foil dimples.
-              3. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and overall grades (PSA, BGS, ACE).
-              4. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.
-              5. UK 7-DAY MARKET PRICING: Provide estimated average sold prices in British Pounds (£) based on actual UK marketplace sales over the last 7 days for the specific calculated grades of PSA, Beckett (BGS), and ACE slabs.`
+              4. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and overall grades (PSA, BGS, ACE).
+              5. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -170,10 +173,10 @@ export default async function handler(req, res) {
             marketPricing: {
               type: Type.OBJECT,
               properties: {
-                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£145.00' based on UK market average for this estimated PSA grade" },
-                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£160.00' based on UK market average for this estimated BGS grade" },
-                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£110.00' based on UK market average for this estimated ACE grade" },
-                pricingNotes: { type: Type.STRING, description: "Brief context on recent UK sales volume or trend" }
+                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£145.00' based on UK market average for this exact card identity and PSA grade" },
+                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£160.00' based on UK market average for this exact card identity and BGS grade" },
+                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£110.00' based on UK market average for this exact card identity and ACE grade" },
+                pricingNotes: { type: Type.STRING, description: "Brief context on matching search precision or trend" }
               },
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
             },
@@ -241,24 +244,22 @@ export default async function handler(req, res) {
     // Force authenticity flag to true always
     parsedResult.isAuthentic = true;
 
-    // Enhance pricing data with live UK eBay API solds if available
-    if (parsedResult.cardName && parsedResult.psaGrade) {
-      const livePsaPrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.psaGrade);
-      if (livePsaPrice) {
-        parsedResult.marketPricing.psaLastSolds7Days = livePsaPrice;
-      }
-    }
-    if (parsedResult.cardName && parsedResult.bgsGrade) {
-      const liveBgsPrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.bgsGrade);
-      if (liveBgsPrice) {
-        parsedResult.marketPricing.bgsLastSolds7Days = liveBgsPrice;
-      }
-    }
-    if (parsedResult.cardName && parsedResult.aceGrade) {
-      const liveAcePrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.aceGrade);
-      if (liveAcePrice) {
-        parsedResult.marketPricing.aceLastSolds7Days = liveAcePrice;
-      }
+    // Execute precise parallel lookups using Name, Card Number, Set, Language, and Grade
+    const cardName = parsedResult.cardName;
+    const cardNumber = parsedResult.cardNumber;
+    const setName = parsedResult.setName;
+    const language = parsedResult.language;
+
+    if (cardName) {
+      const [livePsaPrice, liveBgsPrice, liveAcePrice] = await Promise.all([
+        parsedResult.psaGrade ? fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, parsedResult.psaGrade) : Promise.resolve(null),
+        parsedResult.bgsGrade ? fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, parsedResult.bgsGrade) : Promise.resolve(null),
+        parsedResult.aceGrade ? fetchUkEbayMarketAverage(cardName, cardNumber, setName, language, parsedResult.aceGrade) : Promise.resolve(null)
+      ]);
+
+      if (livePsaPrice) parsedResult.marketPricing.psaLastSolds7Days = livePsaPrice;
+      if (liveBgsPrice) parsedResult.marketPricing.bgsLastSolds7Days = liveBgsPrice;
+      if (liveAcePrice) parsedResult.marketPricing.aceLastSolds7Days = liveAcePrice;
     }
 
     // Decimal safeguard formatting
@@ -289,7 +290,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG live pricing handler error:", error);
+    console.error("OTPTCG precise pricing handler error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

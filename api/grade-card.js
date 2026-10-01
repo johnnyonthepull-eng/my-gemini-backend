@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG master inspector request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG pricing & inspector request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -43,16 +43,17 @@ export default async function handler(req, res) {
           role: "user",
           parts: [
             {
-              text: `You are an elite, uncompromising trading card grading master inspector and optical metrology expert working for a premier grading service. 
+              text: `You are an elite, uncompromising trading card grading master inspector and market pricing expert for the UK TCG secondary market. 
 
-              CRITICAL INSPECTION MANDATES:
-              1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit, fake, or unauthentic due to camera lighting, sleeve glare, scanning artifacts, or foil reflections. Evaluate condition strictly on its physical merits.
-              2. ULTRA-PRECISION DEFECT ANALYSIS: Inspect the corners, edges, and surfaces with extreme microscopic scrutiny. 
-                 - Corners: Identify micro-chipping, slight rounding, corner layering separation, or bottom-layer whitening.
-                 - Edges: Detect minor edge chipping, silvering, whitening along the back borders, or factory edge rough cutting.
-                 - Surface: Hunt for microscopic hairline scratches, surface print lines, foil dimples, minor indentations, or fingerprint oils.
-              3. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and final grades (PSA, BGS, ACE) based strictly on professional grading standards (e.g., PSA 10 requires pristine gem mint qualities; a single speck of whitening or a hairline scratch drops it to a 9 or lower).
-              4. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.`
+              CRITICAL INSPECTION & PRICING MANDATES:
+              1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit or fake.
+              2. ULTRA-PRECISION DEFECT ANALYSIS: Inspect corners, edges, and surfaces with extreme scrutiny. 
+                 - Corners: Micro-chipping, rounding, whitening.
+                 - Edges: Chipping, silvering, rough cuts.
+                 - Surface: Hairlines, print lines, foil dimples.
+              3. EXACT GRADING ACCURACY: Assign realistic, unforgiving sub-grades and overall grades (PSA, BGS, ACE).
+              4. METRIC MEASUREMENTS: Provide precise decimal measurements formatted as x.xx mm (e.g., "1.45 mm") for every border field.
+              5. UK 7-DAY MARKET PRICING: Provide estimated average sold prices in British Pounds (£) based on actual UK marketplace sales over the last 7 days for the specific calculated grades of PSA, Beckett (BGS), and ACE slabs.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -74,29 +75,41 @@ export default async function handler(req, res) {
             isAuthentic: { type: Type.BOOLEAN, description: "Must always evaluate to true" },
 
             // PSA FIELDS
-            psaGrade: { type: Type.STRING, description: "Precise PSA estimated grade e.g. GEM MINT 10, PSA 9, PSA 8" },
+            psaGrade: { type: Type.STRING },
             psaConfidence: { type: Type.STRING },
-            psaReason: { type: Type.STRING, description: "Detailed justification based on exact corner, edge, surface, and centering flaws." },
+            psaReason: { type: Type.STRING },
 
             // BGS FIELDS
-            bgsGrade: { type: Type.STRING, description: "BGS estimated overall grade e.g. BGS 9.5" },
+            bgsGrade: { type: Type.STRING },
             bgsConfidence: { type: Type.STRING },
-            bgsCenteringSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.5" },
-            bgsCornersSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.0" },
-            bgsEdgesSub: { type: Type.STRING, description: "Strict subgrade e.g. 9.5" },
-            bgsSurfaceSub: { type: Type.STRING, description: "Strict subgrade e.g. 8.5" },
-            bgsReason: { type: Type.STRING, description: "Detailed subgrade breakdown rationale." },
+            bgsCenteringSub: { type: Type.STRING },
+            bgsCornersSub: { type: Type.STRING },
+            bgsEdgesSub: { type: Type.STRING },
+            bgsSurfaceSub: { type: Type.STRING },
+            bgsReason: { type: Type.STRING },
 
             // ACE FIELDS
             aceGrade: { type: Type.STRING },
             aceConfidence: { type: Type.STRING },
             aceReason: { type: Type.STRING },
 
+            // RECENT MARKET SOLDS (UK - LAST 7 DAYS)
+            marketPricing: {
+              type: Type.OBJECT,
+              properties: {
+                psaLastSolds7Days: { type: Type.STRING, description: "e.g. '£145.00' based on UK market average for this estimated PSA grade" },
+                bgsLastSolds7Days: { type: Type.STRING, description: "e.g. '£160.00' based on UK market average for this estimated BGS grade" },
+                aceLastSolds7Days: { type: Type.STRING, description: "e.g. '£110.00' based on UK market average for this estimated ACE grade" },
+                pricingNotes: { type: Type.STRING, description: "Brief context on recent UK sales volume or trend" }
+              },
+              required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
+            },
+
             // RECOMMENDATION & SUMMARY
             recommendationService: { type: Type.STRING },
             recommendationVerdict: { type: Type.STRING },
             recommendationReason: { type: Type.STRING },
-            gradeSummary: { type: Type.STRING, description: "Comprehensive breakdown of all physical defects found." },
+            gradeSummary: { type: Type.STRING },
 
             // DIAGNOSTICS
             diagnostics: {
@@ -105,40 +118,28 @@ export default async function handler(req, res) {
                 frontCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Decimal measurement e.g. '1.45 mm'" },
-                    bottom: { type: Type.STRING, description: "Decimal measurement e.g. '1.55 mm'" },
-                    left: { type: Type.STRING, description: "Decimal measurement e.g. '2.10 mm'" },
-                    right: { type: Type.STRING, description: "Decimal measurement e.g. '1.90 mm'" },
-                    ratio: { type: Type.STRING, description: "Calculated ratio e.g. '53/47'" }
+                    top: { type: Type.STRING },
+                    bottom: { type: Type.STRING },
+                    left: { type: Type.STRING },
+                    right: { type: Type.STRING },
+                    ratio: { type: Type.STRING }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
                 backCentering: {
                   type: Type.OBJECT,
                   properties: {
-                    top: { type: Type.STRING, description: "Decimal measurement e.g. '1.50 mm'" },
-                    bottom: { type: Type.STRING, description: "Decimal measurement e.g. '1.50 mm'" },
-                    left: { type: Type.STRING, description: "Decimal measurement e.g. '1.75 mm'" },
-                    right: { type: Type.STRING, description: "Decimal measurement e.g. '1.25 mm'" },
-                    ratio: { type: Type.STRING, description: "Calculated ratio e.g. '50/50'" }
+                    top: { type: Type.STRING },
+                    bottom: { type: Type.STRING },
+                    left: { type: Type.STRING },
+                    right: { type: Type.STRING },
+                    ratio: { type: Type.STRING }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
-                cornerFlaws: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Ultra-precise breakdown for top-left, top-right, bottom-left, bottom-right corners"
-                },
-                edgeFlaws: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Ultra-precise breakdown for top, bottom, left, and right card edges"
-                },
-                surfaceFlaws: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Ultra-precise breakdown for front and back surface textures, scratches, and print lines"
-                }
+                cornerFlaws: { type: Type.ARRAY, items: { type: Type.STRING } },
+                edgeFlaws: { type: Type.ARRAY, items: { type: Type.STRING } },
+                surfaceFlaws: { type: Type.ARRAY, items: { type: Type.STRING } }
               },
               required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
             }
@@ -148,6 +149,7 @@ export default async function handler(req, res) {
             "variant", "identificationConfidence", "isAuthentic", 
             "psaGrade", "psaConfidence", "psaReason",
             "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub", "bgsEdgesSub", "bgsSurfaceSub", "bgsReason",
+            "marketPricing",
             "aceGrade", "aceConfidence", "aceReason",
             "recommendationService", "recommendationVerdict", "recommendationReason",
             "gradeSummary", "diagnostics"
@@ -194,7 +196,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG master inspector error:", error);
+    console.error("OTPTCG pricing error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

@@ -2,6 +2,79 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Helper to fetch an OAuth token from eBay using your production keys
+async function getEbayAccessToken() {
+  const clientId = process.env.EBAY_CLIENT_ID;
+  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    console.warn("eBay API credentials missing from environment variables.");
+    return null;
+  }
+
+  try {
+    const credentials = Buffer.from(`\({clientId}:\){clientSecret}`).toString("base64");
+    const response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Basic ${credentials}`
+      },
+      body: "grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope"
+    });
+
+    const data = await response.json();
+    return data.access_token || null;
+  } catch (err) {
+    console.error("Failed to authenticate with eBay OAuth:", err);
+    return null;
+  }
+}
+
+// Helper to query live UK marketplace solds from eBay Browse API
+async function fetchUkEbayMarketAverage(cardQuery, gradeTier) {
+  const token = await getEbayAccessToken();
+  if (!token) return null;
+
+  try {
+    const searchQuery = encodeURIComponent(`\({cardQuery}\){gradeTier}`);
+    // Search completed/sold or active listings on the UK marketplace (EBAY_GB)
+    const url = `https://api.ebay.com/buy/browse/v1_beta/item_summary/search?q=${searchQuery}&marketplaceId=EBAY_GB&limit=5`;
+
+    const response = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_GB"
+      }
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data.itemSummaries || data.itemSummaries.length === 0) return null;
+
+    let totalPrice = 0;
+    let count = 0;
+
+    for (const item of data.itemSummaries) {
+      if (item.price && item.price.value) {
+        const val = parseFloat(item.price.value);
+        if (!isNaN(val)) {
+          totalPrice += val;
+          count++;
+        }
+      }
+    }
+
+    if (count === 0) return null;
+    const avg = (totalPrice / count).toFixed(2);
+    return `£${avg}`;
+  } catch (err) {
+    console.error("Error fetching eBay market average:", err);
+    return null;
+  }
+}
+
 export default async function handler(req, res) {
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
@@ -31,7 +104,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Both frontImage and backImage are required." });
     }
 
-    console.log("OTPTCG pricing & inspector request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG live pricing & inspector request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -43,7 +116,7 @@ export default async function handler(req, res) {
           role: "user",
           parts: [
             {
-              text: `You are an elite, uncompromising trading card grading master inspector and market pricing expert for the UK TCG secondary market. 
+              text: `You are an elite, uncompromising trading card grading master inspector and UK market pricing expert. 
 
               CRITICAL INSPECTION & PRICING MANDATES:
               1. PRESUMED AUTHENTICITY: Treat every card submitted as 100% authentic genuine merchandise. NEVER flag a card as counterfeit or fake.
@@ -168,6 +241,26 @@ export default async function handler(req, res) {
     // Force authenticity flag to true always
     parsedResult.isAuthentic = true;
 
+    // Enhance pricing data with live UK eBay API solds if available
+    if (parsedResult.cardName && parsedResult.psaGrade) {
+      const livePsaPrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.psaGrade);
+      if (livePsaPrice) {
+        parsedResult.marketPricing.psaLastSolds7Days = livePsaPrice;
+      }
+    }
+    if (parsedResult.cardName && parsedResult.bgsGrade) {
+      const liveBgsPrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.bgsGrade);
+      if (liveBgsPrice) {
+        parsedResult.marketPricing.bgsLastSolds7Days = liveBgsPrice;
+      }
+    }
+    if (parsedResult.cardName && parsedResult.aceGrade) {
+      const liveAcePrice = await fetchUkEbayMarketAverage(parsedResult.cardName, parsedResult.aceGrade);
+      if (liveAcePrice) {
+        parsedResult.marketPricing.aceLastSolds7Days = liveAcePrice;
+      }
+    }
+
     // Decimal safeguard formatting
     const ensureDecimalMm = (val) => {
       if (!val || val === "—" || val.trim() === "") return "1.50 mm";
@@ -196,7 +289,7 @@ export default async function handler(req, res) {
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG pricing error:", error);
+    console.error("OTPTCG live pricing handler error:", error);
     return res.status(500).json({
       error: error && error.message ? error.message : "Card grading failed."
     });

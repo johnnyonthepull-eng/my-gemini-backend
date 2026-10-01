@@ -1,8 +1,11 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default async function handler(req, res) {
+  // =========================================================
+  // 1. ROBUST CORS & PREFLIGHT HANDLING
+  // =========================================================
   const allowedOrigin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Vary", "Origin");
@@ -15,10 +18,18 @@ export default async function handler(req, res) {
   );
   res.setHeader("Access-Control-Max-Age", "86400");
 
-  if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   try {
+    // =========================================================
+    // 2. PARSE REQUEST PAYLOAD
+    // =========================================================
     const { frontImage, backImage, sessionNonce } = req.body || {};
 
     if (!frontImage || !backImage) {
@@ -30,109 +41,91 @@ export default async function handler(req, res) {
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            cardName: { type: SchemaType.STRING },
-            setName: { type: SchemaType.STRING },
-            cardNumber: { type: SchemaType.STRING },
-            rarity: { type: SchemaType.STRING },
-            language: { type: SchemaType.STRING },
-            variant: { type: SchemaType.STRING },
-            identificationConfidence: { type: SchemaType.STRING },
-            isAuthentic: { type: SchemaType.BOOLEAN },
+    // =========================================================
+    // 3. CALL GEMINI API WITH ACTIVE MODEL & ENFORCED JSON PROMPT
+    // =========================================================
+    const prompt = `
+You are a master trading card grading inspector. Analyze the provided front and back card images. 
+Return a strict raw JSON object (no markdown formatting, no code blocks, just raw JSON) matching this exact schema precisely. Do not leave any fields blank or use dashes.
 
-            psaGrade: { type: SchemaType.STRING },
-            psaConfidence: { type: SchemaType.STRING },
-            psaReason: { type: SchemaType.STRING },
+{
+  "cardName": "string",
+  "setName": "string",
+  "cardNumber": "string",
+  "rarity": "string",
+  "language": "string",
+  "variant": "string",
+  "identificationConfidence": "string",
+  "isAuthentic": true,
+  "psaGrade": "string",
+  "psaConfidence": "string",
+  "psaReason": "string",
+  "bgsGrade": "string",
+  "bgsConfidence": "string",
+  "bgsCenteringSub": "string",
+  "bgsCornersSub": "string",
+  "bgsEdgesSub": "string",
+  "bgsSurfaceSub": "string",
+  "bgsReason": "string",
+  "aceGrade": "string",
+  "aceConfidence": "string",
+  "aceReason": "string",
+  "recommendationService": "string",
+  "recommendationVerdict": "string",
+  "recommendationReason": "string",
+  "gradeSummary": "string",
+  "diagnostics": {
+    "frontCentering": {
+      "top": "string",
+      "bottom": "string",
+      "left": "string",
+      "right": "string",
+      "ratio": "string"
+    },
+    "backCentering": {
+      "top": "string",
+      "bottom": "string",
+      "left": "string",
+      "right": "string",
+      "ratio": "string"
+    },
+    "cornerFlaws": ["array of detailed descriptions"],
+    "edgeFlaws": ["array of detailed descriptions"],
+    "surfaceFlaws": ["array of detailed descriptions"]
+  }
+}
+`;
 
-            bgsGrade: { type: SchemaType.STRING },
-            bgsConfidence: { type: SchemaType.STRING },
-            bgsCenteringSub: { type: SchemaType.STRING },
-            bgsCornersSub: { type: SchemaType.STRING },
-            bgsEdgesSub: { type: SchemaType.STRING },
-            bgsSurfaceSub: { type: SchemaType.STRING },
-            bgsReason: { type: SchemaType.STRING },
-
-            aceGrade: { type: SchemaType.STRING },
-            aceConfidence: { type: SchemaType.STRING },
-            aceReason: { type: SchemaType.STRING },
-
-            recommendationService: { type: SchemaType.STRING },
-            recommendationVerdict: { type: SchemaType.STRING },
-            recommendationReason: { type: SchemaType.STRING },
-            gradeSummary: { type: SchemaType.STRING },
-
-            diagnostics: {
-              type: SchemaType.OBJECT,
-              properties: {
-                frontCentering: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    top: { type: SchemaType.STRING },
-                    bottom: { type: SchemaType.STRING },
-                    left: { type: SchemaType.STRING },
-                    right: { type: SchemaType.STRING },
-                    ratio: { type: SchemaType.STRING }
-                  },
-                  required: ["top", "bottom", "left", "right", "ratio"]
-                },
-                backCentering: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    top: { type: SchemaType.STRING },
-                    bottom: { type: SchemaType.STRING },
-                    left: { type: SchemaType.STRING },
-                    right: { type: SchemaType.STRING },
-                    ratio: { type: SchemaType.STRING }
-                  },
-                  required: ["top", "bottom", "left", "right", "ratio"]
-                },
-                cornerFlaws: {
-                  type: SchemaType.ARRAY,
-                  items: { type: SchemaType.STRING }
-                },
-                edgeFlaws: {
-                  type: SchemaType.ARRAY,
-                  items: { type: SchemaType.STRING }
-                },
-                surfaceFlaws: {
-                  type: SchemaType.ARRAY,
-                  items: { type: SchemaType.STRING }
-                }
-              },
-              required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
-            }
-          },
-          required: [
-            "cardName", "setName", "cardNumber", "rarity", "language", 
-            "variant", "identificationConfidence", "isAuthentic", 
-            "psaGrade", "psaConfidence", "psaReason",
-            "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub", "bgsEdgesSub", "bgsSurfaceSub", "bgsReason",
-            "aceGrade", "aceConfidence", "aceReason",
-            "recommendationService", "recommendationVerdict", "recommendationReason",
-            "gradeSummary", "diagnostics"
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
+            { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
           ]
         }
-      }
+      ]
     });
 
-    const prompt = `Analyze the provided front and back card images. Provide a comprehensive professional grading report. Treat the card as 100% authentic, ignore holder plastic glare, populate every single text field thoroughly with deep detail, and provide exact centering percentages and ratios.`;
+    const rawText = response.text;
+    if (!rawText) {
+      throw new Error("No response received from the grading model.");
+    }
 
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
-      { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
-    ]);
+    const cleanedJSON = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    const rawText = result.response.text();
-    if (!rawText) throw new Error("No response received from model.");
+    const parsedResult = JSON.parse(cleanedJSON);
 
-    return res.status(200).json(JSON.parse(rawText));
+    // =========================================================
+    // 4. RETURN SUCCESS RESPONSE
+    // =========================================================
+    return res.status(200).json(parsedResult);
 
   } catch (error) {
     console.error("OTPTCG grade-card error:", error);

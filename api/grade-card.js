@@ -1,5 +1,14 @@
 const { GoogleGenAI } = require("@google/genai");
 
+// Configure Vercel body parser limit to 10MB to safely handle card image payloads
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 module.exports = async function handler(req, res) {
   // =========================================================
   // 1. BULLETPROOF CORS HEADERS
@@ -21,7 +30,7 @@ module.exports = async function handler(req, res) {
 
   try {
     if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY environment variable is missing on Vercel.");
+      return res.status(500).json({ error: "GEMINI_API_KEY is missing from Vercel environment variables." });
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -38,7 +47,7 @@ module.exports = async function handler(req, res) {
 
     const prompt = `
 You are a master trading card grading inspector. Analyze the provided front and back card images. 
-Return a strict raw JSON object (no markdown formatting, no code blocks, just raw JSON) matching this exact schema precisely. Do not leave any fields blank or use dashes.
+Return ONLY a valid raw JSON object. Do not wrap the JSON in markdown code blocks like \`\`\`json. Match this exact schema precisely:
 
 {
   "cardName": "string",
@@ -88,9 +97,8 @@ Return a strict raw JSON object (no markdown formatting, no code blocks, just ra
 }
 `;
 
-    // Using the stable auto-updating Flash alias supported by @google/genai
     const response = await ai.models.generateContent({
-      model: "gemini-flash-latest",
+      model: "gemini-3.8-flash",
       contents: [
         {
           role: "user",
@@ -108,16 +116,19 @@ Return a strict raw JSON object (no markdown formatting, no code blocks, just ra
       throw new Error("No response received from the grading model.");
     }
 
-    const cleanedJSON = rawText
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
+    // Robust cleaning to strip potential markdown formatting if the model includes it
+    let cleanedJSON = rawText.trim();
+    if (cleanedJSON.startsWith("```json")) {
+      cleanedJSON = cleanedJSON.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (cleanedJSON.startsWith("```")) {
+      cleanedJSON = cleanedJSON.replace(/^```/, "").replace(/```$/, "").trim();
+    }
 
     const parsedResult = JSON.parse(cleanedJSON);
     return res.status(200).json(parsedResult);
 
   } catch (error) {
-    console.error("OTPTCG grade-card error:", error);
-    return res.status(500).json({ error: error.message || "Card grading failed." });
+    console.error("OTPTCG grade-card error details:", error);
+    return res.status(500).json({ error: error.message || "Card grading failed due to an internal server exception." });
   }
 };

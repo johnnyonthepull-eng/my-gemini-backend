@@ -12,7 +12,7 @@ function getUniversalVerifiedSoldValuation(cardName, rarity, gradeTier) {
   const nameLower = (cardName || "").toLowerCase();
   const rarityLower = (rarity || "").toLowerCase();
 
-  // 1. Dynamic Base Value Derivation from Rarity & Name Keywords (Universal for all cards)
+  // 1. Dynamic Base Value Derivation from Rarity & Keywords (Universal for all cards)
   let basePsaValuation = 45.00;
 
   if (rarityLower.includes("illustration rare") || rarityLower.includes("secret") || rarityLower.includes("hyper") || rarityLower.includes("ultra") || rarityLower.includes("ex") || rarityLower.includes("vmax") || rarityLower.includes("vstar")) {
@@ -25,7 +25,7 @@ function getUniversalVerifiedSoldValuation(cardName, rarity, gradeTier) {
   // 2. Grade-Tier Exponential Scaling Multiplier (Universal TCG curve)
   let gradeMultiplier = 1.0;
   if (gradeNum >= 10) {
-    gradeMultiplier = 3.5; // Gem Mint / Pristine multiplier jump
+    gradeMultiplier = 3.5; 
   } else if (gradeNum === 9.5) {
     gradeMultiplier = 2.2;
   } else if (gradeNum === 9) {
@@ -38,7 +38,6 @@ function getUniversalVerifiedSoldValuation(cardName, rarity, gradeTier) {
 
   let calculatedPsaValue = basePsaValuation * gradeMultiplier;
 
-  // Ensure minimum baseline pricing floor
   if (calculatedPsaValue < 25.00) calculatedPsaValue = 25.00;
 
   let finalValuation = calculatedPsaValue;
@@ -46,14 +45,13 @@ function getUniversalVerifiedSoldValuation(cardName, rarity, gradeTier) {
   // 3. House-to-House Market Spread Adjustments
   if (company === "BGS") {
     if (gradeNum >= 10) {
-      finalValuation = calculatedPsaValue * 1.30; // BGS Pristine / Black Label tier premium
+      finalValuation = calculatedPsaValue * 1.30; 
     } else if (gradeNum >= 9.5) {
-      finalValuation = calculatedPsaValue * 0.95; // BGS 9.5 tracks slightly under PSA 10 liquidity
+      finalValuation = calculatedPsaValue * 0.95; 
     } else {
       finalValuation = calculatedPsaValue * 0.88;
     }
   } else if (company === "ACE") {
-    // ACE trades at a localized UK collector liquidity discount relative to US houses
     if (gradeNum >= 10) {
       finalValuation = calculatedPsaValue * 0.60;
     } else {
@@ -99,7 +97,7 @@ export default async function handler(req, res) {
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
+      model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
@@ -137,12 +135,10 @@ export default async function handler(req, res) {
             identificationConfidence: { type: Type.STRING },
             isAuthentic: { type: Type.BOOLEAN, description: "Must always evaluate to true" },
 
-            // PSA FIELDS
             psaGrade: { type: Type.STRING },
             psaConfidence: { type: Type.STRING },
             psaReason: { type: Type.STRING },
 
-            // BGS FIELDS
             bgsGrade: { type: Type.STRING },
             bgsConfidence: { type: Type.STRING },
             bgsCenteringSub: { type: Type.STRING },
@@ -151,12 +147,10 @@ export default async function handler(req, res) {
             bgsSurfaceSub: { type: Type.STRING },
             bgsReason: { type: Type.STRING },
 
-            // ACE FIELDS
             aceGrade: { type: Type.STRING },
             aceConfidence: { type: Type.STRING },
             aceReason: { type: Type.STRING },
 
-            // RECENT COMPLETED / SOLD LISTINGS (UK - 30 DAY WINDOW)
             marketPricing: {
               type: Type.OBJECT,
               properties: {
@@ -168,13 +162,11 @@ export default async function handler(req, res) {
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
             },
 
-            // RECOMMENDATION & SUMMARY
             recommendationService: { type: Type.STRING },
             recommendationVerdict: { type: Type.STRING },
             recommendationReason: { type: Type.STRING },
             gradeSummary: { type: Type.STRING },
 
-            // DIAGNOSTICS
             diagnostics: {
               type: Type.OBJECT,
               properties: {

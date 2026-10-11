@@ -1,7 +1,6 @@
 const { GoogleGenAI } = require("@google/genai");
 
 exports.handler = async function(event, context) {
-  // Air-tight CORS headers
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
@@ -9,7 +8,6 @@ exports.handler = async function(event, context) {
     "Content-Type": "application/json"
   };
 
-  // Immediate 204 preflight response
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers, body: "" };
   }
@@ -28,7 +26,7 @@ exports.handler = async function(event, context) {
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "GEMINI_API_KEY missing on Netlify backend." })
+        body: JSON.stringify({ error: "GEMINI_API_KEY is not configured on Netlify." })
       };
     }
 
@@ -65,7 +63,7 @@ exports.handler = async function(event, context) {
           role: "user",
           parts: [
             {
-              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface under multi-spectral scrutiny. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
+              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }

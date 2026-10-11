@@ -1,13 +1,15 @@
 const { GoogleGenAI } = require("@google/genai");
 
 exports.handler = async function(event, context) {
+  // Air-tight CORS headers
   const headers = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control",
+    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json"
   };
 
+  // Immediate 204 preflight response
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers, body: "" };
   }
@@ -21,15 +23,35 @@ exports.handler = async function(event, context) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const body = JSON.parse(event.body || "{}");
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: "GEMINI_API_KEY missing on Netlify backend." })
+      };
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    let body = {};
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch(e) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Invalid JSON request payload." })
+      };
+    }
+
     const { frontImage, backImage } = body;
 
     if (!frontImage || !backImage) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: "Both frontImage and backImage are required." })
+        body: JSON.stringify({ error: "Both front and back images are required." })
       };
     }
 
@@ -43,7 +65,7 @@ exports.handler = async function(event, context) {
           role: "user",
           parts: [
             {
-              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
+              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface under multi-spectral scrutiny. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -143,6 +165,7 @@ exports.handler = async function(event, context) {
     });
 
     const parsedResult = JSON.parse(response.text);
+    parsedResult.isAuthentic = true;
 
     return {
       statusCode: 200,
@@ -151,11 +174,11 @@ exports.handler = async function(event, context) {
     };
 
   } catch (error) {
-    console.error("Grader error:", error);
+    console.error("Grading error:", error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: error.message || "Internal server error" })
+      body: JSON.stringify({ error: error.message || "Internal server error during card grading." })
     };
   }
 };

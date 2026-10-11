@@ -1,16 +1,13 @@
-// netlify/functions/grade-card.js
-import { GoogleGenAI, Type } from "@google/genai";
+const { GoogleGenAI } = require("@google/genai");
 
-export async function handler(event, context) {
+exports.handler = async function(event, context) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
-    "Access-Control-Max-Age": "86400",
     "Content-Type": "application/json"
   };
 
-  // Handle preflight OPTIONS request immediately
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers, body: "" };
   }
@@ -26,7 +23,7 @@ export async function handler(event, context) {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const body = JSON.parse(event.body || "{}");
-    const { frontImage, backImage, sessionNonce } = body;
+    const { frontImage, backImage } = body;
 
     if (!frontImage || !backImage) {
       return {
@@ -35,8 +32,6 @@ export async function handler(event, context) {
         body: JSON.stringify({ error: "Both frontImage and backImage are required." })
       };
     }
-
-    console.log("OTPTCG grading request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -48,16 +43,7 @@ export async function handler(event, context) {
           role: "user",
           parts: [
             {
-              text: `You are OnThePullTCG’s elite, uncompromising trading card grading master inspector and market intelligence engine. Your reputation relies on absolute accuracy. Collectors depend on you to catch every single micro-flaw and provide accurate market data.
-
-              FORENSIC GRADING & COMPLETED SOLD PRICING MANDATES:
-              1. RIGOROUS INSPECTION: Analyze front and back images. Check corners, edges, and surface under virtual multi-spectral scrutiny. Penalize flaws accurately for PSA, BGS, and ACE grades.
-              2. ACCURATE COMPLETED SOLD PRICING (GBP £): For the identified card and its assigned grade under each specific house (PSA, BGS, ACE), provide the verified historical completed/sold market average over the last 30 days down to the exact penny (e.g., £154.50).
-              3. GRADING HOUSE DIFFERENTIATION: Ensure clear, realistic market separation between companies:
-                 - PSA: Global benchmark liquidity standard.
-                 - BGS: Factoring sub-grade premiums and pristine/black label tier weightings where applicable.
-                 - ACE: Reflecting localized UK secondary market collector pricing and liquidity variance.
-              4. PRESUMED AUTHENTICITY: Treat every card submitted as 100% genuine authentic merchandise.`
+              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
             },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
@@ -67,77 +53,77 @@ export async function handler(event, context) {
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            cardName: { type: Type.STRING },
-            setName: { type: Type.STRING },
-            cardNumber: { type: Type.STRING },
-            rarity: { type: Type.STRING },
-            language: { type: Type.STRING },
-            variant: { type: Type.STRING },
-            identificationConfidence: { type: Type.STRING },
-            isAuthentic: { type: Type.BOOLEAN, description: "Must always evaluate to true" },
+            cardName: { type: "STRING" },
+            setName: { type: "STRING" },
+            cardNumber: { type: "STRING" },
+            rarity: { type: "STRING" },
+            language: { type: "STRING" },
+            variant: { type: "STRING" },
+            identificationConfidence: { type: "STRING" },
+            isAuthentic: { type: "BOOLEAN" },
 
-            psaGrade: { type: Type.STRING },
-            psaConfidence: { type: Type.STRING },
-            psaReason: { type: Type.STRING },
+            psaGrade: { type: "STRING" },
+            psaConfidence: { type: "STRING" },
+            psaReason: { type: "STRING" },
 
-            bgsGrade: { type: Type.STRING },
-            bgsConfidence: { type: Type.STRING },
-            bgsCenteringSub: { type: Type.STRING },
-            bgsCornersSub: { type: Type.STRING },
-            bgsEdgesSub: { type: Type.STRING },
-            bgsSurfaceSub: { type: Type.STRING },
-            bgsReason: { type: Type.STRING },
+            bgsGrade: { type: "STRING" },
+            bgsConfidence: { type: "STRING" },
+            bgsCenteringSub: { type: "STRING" },
+            bgsCornersSub: { type: "STRING" },
+            bgsEdgesSub: { type: "STRING" },
+            bgsSurfaceSub: { type: "STRING" },
+            bgsReason: { type: "STRING" },
 
-            aceGrade: { type: Type.STRING },
-            aceConfidence: { type: Type.STRING },
-            aceReason: { type: Type.STRING },
+            aceGrade: { type: "STRING" },
+            aceConfidence: { type: "STRING" },
+            aceReason: { type: "STRING" },
 
             marketPricing: {
-              type: Type.OBJECT,
+              type: "OBJECT",
               properties: {
-                psaLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for PSA grade formatted to exact pennies, e.g. '£154.50'" },
-                bgsLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for BGS grade formatted to exact pennies, e.g. '£142.25'" },
-                aceLastSolds7Days: { type: Type.STRING, description: "Verified 30-day completed sold average for ACE grade formatted to exact pennies, e.g. '£98.80'" },
-                pricingNotes: { type: Type.STRING, description: "Context confirming market data is derived from historical completed transactions with correct company differentiation." }
+                psaLastSolds7Days: { type: "STRING" },
+                bgsLastSolds7Days: { type: "STRING" },
+                aceLastSolds7Days: { type: "STRING" },
+                pricingNotes: { type: "STRING" }
               },
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
             },
 
-            recommendationService: { type: Type.STRING },
-            recommendationVerdict: { type: Type.STRING },
-            recommendationReason: { type: Type.STRING },
-            gradeSummary: { type: Type.STRING },
+            recommendationService: { type: "STRING" },
+            recommendationVerdict: { type: "STRING" },
+            recommendationReason: { type: "STRING" },
+            gradeSummary: { type: "STRING" },
 
             diagnostics: {
-              type: Type.OBJECT,
+              type: "OBJECT",
               properties: {
                 frontCentering: {
-                  type: Type.OBJECT,
+                  type: "OBJECT",
                   properties: {
-                    top: { type: Type.STRING },
-                    bottom: { type: Type.STRING },
-                    left: { type: Type.STRING },
-                    right: { type: Type.STRING },
-                    ratio: { type: Type.STRING }
+                    top: { type: "STRING" },
+                    bottom: { type: "STRING" },
+                    left: { type: "STRING" },
+                    right: { type: "STRING" },
+                    ratio: { type: "STRING" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
                 backCentering: {
-                  type: Type.OBJECT,
+                  type: "OBJECT",
                   properties: {
-                    top: { type: Type.STRING },
-                    bottom: { type: Type.STRING },
-                    left: { type: Type.STRING },
-                    right: { type: Type.STRING },
-                    ratio: { type: Type.STRING }
+                    top: { type: "STRING" },
+                    bottom: { type: "STRING" },
+                    left: { type: "STRING" },
+                    right: { type: "STRING" },
+                    ratio: { type: "STRING" }
                   },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
-                cornerFlaws: { type: Type.ARRAY, items: { type: Type.STRING } },
-                edgeFlaws: { type: Type.ARRAY, items: { type: Type.STRING } },
-                surfaceFlaws: { type: Type.ARRAY, items: { type: Type.STRING } }
+                cornerFlaws: { type: "ARRAY", items: { type: "STRING" } },
+                edgeFlaws: { type: "ARRAY", items: { type: "STRING" } },
+                surfaceFlaws: { type: "ARRAY", items: { type: "STRING" } }
               },
               required: ["frontCentering", "backCentering", "cornerFlaws", "edgeFlaws", "surfaceFlaws"]
             }
@@ -156,37 +142,7 @@ export async function handler(event, context) {
       }
     });
 
-    const rawText = response.text;
-    if (!rawText) {
-      throw new Error("No response received from the grading model.");
-    }
-
-    const parsedResult = JSON.parse(rawText);
-    parsedResult.isAuthentic = true;
-
-    const ensureDecimalMm = (val) => {
-      if (!val || val === "—" || val.trim() === "") return "1.50 mm";
-      const cleaned = val.replace(/[^0-9.]/g, "");
-      const num = parseFloat(cleaned);
-      if (isNaN(num)) return "1.50 mm";
-      return `${num.toFixed(2)} mm`;
-    };
-
-    if (parsedResult.diagnostics && parsedResult.diagnostics.frontCentering) {
-      const fc = parsedResult.diagnostics.frontCentering;
-      fc.top = ensureDecimalMm(fc.top);
-      fc.bottom = ensureDecimalMm(fc.bottom);
-      fc.left = ensureDecimalMm(fc.left);
-      fc.right = ensureDecimalMm(fc.right);
-    }
-
-    if (parsedResult.diagnostics && parsedResult.diagnostics.backCentering) {
-      const bc = parsedResult.diagnostics.backCentering;
-      bc.top = ensureDecimalMm(bc.top);
-      bc.bottom = ensureDecimalMm(bc.bottom);
-      bc.left = ensureDecimalMm(bc.left);
-      bc.right = ensureDecimalMm(bc.right);
-    }
+    const parsedResult = JSON.parse(response.text);
 
     return {
       statusCode: 200,
@@ -195,13 +151,11 @@ export async function handler(event, context) {
     };
 
   } catch (error) {
-    console.error("OTPTCG handler error:", error);
+    console.error("Grader error:", error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: error && error.message ? error.message : "Card grading failed."
-      })
+      body: JSON.stringify({ error: error.message || "Internal server error" })
     };
   }
-}
+};

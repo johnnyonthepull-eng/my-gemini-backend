@@ -1,20 +1,16 @@
 // netlify/functions/grade-card.js
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export async function handler(event, context) {
-  const allowedOrigin = event.headers.origin || "*";
-
   const headers = {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    "Vary": "Origin",
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
     "Access-Control-Max-Age": "86400",
     "Content-Type": "application/json"
   };
 
+  // Handle preflight OPTIONS request immediately
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers, body: "" };
   }
@@ -28,6 +24,7 @@ export async function handler(event, context) {
   }
 
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const body = JSON.parse(event.body || "{}");
     const { frontImage, backImage, sessionNonce } = body;
 
@@ -39,7 +36,7 @@ export async function handler(event, context) {
       };
     }
 
-    console.log("OTPTCG direct AI market sold pricing request received. Nonce:", sessionNonce || "none");
+    console.log("OTPTCG grading request received. Nonce:", sessionNonce || "none");
 
     const cleanFront = frontImage.replace(/^data:image\/\w+;base64,/, "");
     const cleanBack = backImage.replace(/^data:image\/\w+;base64,/, "");
@@ -198,7 +195,7 @@ export async function handler(event, context) {
     };
 
   } catch (error) {
-    console.error("OTPTCG direct AI pricing handler error:", error);
+    console.error("OTPTCG handler error:", error);
     return {
       statusCode: 500,
       headers,

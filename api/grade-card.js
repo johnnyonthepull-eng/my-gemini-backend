@@ -1,35 +1,42 @@
-// api/grade-card.js
+// netlify/functions/grade-card.js
 import { GoogleGenAI, Type } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export default async function handler(req, res) {
-  const allowedOrigin = req.headers.origin || "*";
-  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  
-  const requestedHeaders = req.headers["access-control-request-headers"];
-  res.setHeader(
-    "Access-Control-Allow-Headers", 
-    requestedHeaders || "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With"
-  );
-  
-  res.setHeader("Access-Control-Max-Age", "86400");
+export async function handler(event, context) {
+  const allowedOrigin = event.headers.origin || "*";
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
+  const headers = {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
+    "Access-Control-Max-Age": "86400",
+    "Content-Type": "application/json"
+  };
+
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers, body: "" };
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (event.httpMethod !== "POST") {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: "Method not allowed" })
+    };
   }
 
   try {
-    const { frontImage, backImage, sessionNonce } = req.body || {};
+    const body = JSON.parse(event.body || "{}");
+    const { frontImage, backImage, sessionNonce } = body;
 
     if (!frontImage || !backImage) {
-      return res.status(400).json({ error: "Both frontImage and backImage are required." });
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: "Both frontImage and backImage are required." })
+      };
     }
 
     console.log("OTPTCG direct AI market sold pricing request received. Nonce:", sessionNonce || "none");
@@ -139,8 +146,8 @@ export default async function handler(req, res) {
             }
           },
           required: [
-            "cardName", "setName", "cardNumber", "rarity", "language", 
-            "variant", "identificationConfidence", "isAuthentic", 
+            "cardName", "setName", "cardNumber", "rarity", "language",
+            "variant", "identificationConfidence", "isAuthentic",
             "psaGrade", "psaConfidence", "psaReason",
             "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub", "bgsEdgesSub", "bgsSurfaceSub", "bgsReason",
             "marketPricing",
@@ -184,12 +191,20 @@ export default async function handler(req, res) {
       bc.right = ensureDecimalMm(bc.right);
     }
 
-    return res.status(200).json(parsedResult);
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(parsedResult)
+    };
 
   } catch (error) {
     console.error("OTPTCG direct AI pricing handler error:", error);
-    return res.status(500).json({
-      error: error && error.message ? error.message : "Card grading failed."
-    });
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        error: error && error.message ? error.message : "Card grading failed."
+      })
+    };
   }
 }

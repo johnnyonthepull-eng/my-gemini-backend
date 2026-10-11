@@ -3,7 +3,7 @@ const { GoogleGenAI } = require("@google/genai");
 exports.handler = async function(event, context) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, Accept, Cache-Control, Pragma, Expires, X-Requested-With",
+    "Access-Control-Allow-Headers": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json"
   };
@@ -26,23 +26,12 @@ exports.handler = async function(event, context) {
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: "GEMINI_API_KEY is not configured on Netlify." })
+        body: JSON.stringify({ error: "GEMINI_API_KEY missing on Netlify backend." })
       };
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    
-    let body = {};
-    try {
-      body = JSON.parse(event.body || "{}");
-    } catch(e) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: "Invalid JSON request payload." })
-      };
-    }
-
+    const body = JSON.parse(event.body || "{}");
     const { frontImage, backImage } = body;
 
     if (!frontImage || !backImage) {
@@ -62,9 +51,7 @@ exports.handler = async function(event, context) {
         {
           role: "user",
           parts: [
-            {
-              text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.`
-            },
+            { text: `You are OnThePullTCG’s elite trading card grading master inspector and market intelligence engine. Inspect front and back images for corners, edges, and surface. Provide precise UK market completed sold prices (GBP £) over the last 30 days for PSA, BGS, and ACE grades.` },
             { inlineData: { mimeType: "image/jpeg", data: cleanFront } },
             { inlineData: { mimeType: "image/jpeg", data: cleanBack } }
           ]
@@ -83,11 +70,9 @@ exports.handler = async function(event, context) {
             variant: { type: "STRING" },
             identificationConfidence: { type: "STRING" },
             isAuthentic: { type: "BOOLEAN" },
-
             psaGrade: { type: "STRING" },
             psaConfidence: { type: "STRING" },
             psaReason: { type: "STRING" },
-
             bgsGrade: { type: "STRING" },
             bgsConfidence: { type: "STRING" },
             bgsCenteringSub: { type: "STRING" },
@@ -95,11 +80,9 @@ exports.handler = async function(event, context) {
             bgsEdgesSub: { type: "STRING" },
             bgsSurfaceSub: { type: "STRING" },
             bgsReason: { type: "STRING" },
-
             aceGrade: { type: "STRING" },
             aceConfidence: { type: "STRING" },
             aceReason: { type: "STRING" },
-
             marketPricing: {
               type: "OBJECT",
               properties: {
@@ -110,35 +93,21 @@ exports.handler = async function(event, context) {
               },
               required: ["psaLastSolds7Days", "bgsLastSolds7Days", "aceLastSolds7Days", "pricingNotes"]
             },
-
             recommendationService: { type: "STRING" },
             recommendationVerdict: { type: "STRING" },
             recommendationReason: { type: "STRING" },
             gradeSummary: { type: "STRING" },
-
             diagnostics: {
               type: "OBJECT",
               properties: {
                 frontCentering: {
                   type: "OBJECT",
-                  properties: {
-                    top: { type: "STRING" },
-                    bottom: { type: "STRING" },
-                    left: { type: "STRING" },
-                    right: { type: "STRING" },
-                    ratio: { type: "STRING" }
-                  },
+                  properties: { top: { type: "STRING" }, bottom: { type: "STRING" }, left: { type: "STRING" }, right: { type: "STRING" }, ratio: { type: "STRING" } },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
                 backCentering: {
                   type: "OBJECT",
-                  properties: {
-                    top: { type: "STRING" },
-                    bottom: { type: "STRING" },
-                    left: { type: "STRING" },
-                    right: { type: "STRING" },
-                    ratio: { type: "STRING" }
-                  },
+                  properties: { top: { type: "STRING" }, bottom: { type: "STRING" }, left: { type: "STRING" }, right: { type: "STRING" }, ratio: { type: "STRING" } },
                   required: ["top", "bottom", "left", "right", "ratio"]
                 },
                 cornerFlaws: { type: "ARRAY", items: { type: "STRING" } },
@@ -149,14 +118,12 @@ exports.handler = async function(event, context) {
             }
           },
           required: [
-            "cardName", "setName", "cardNumber", "rarity", "language",
-            "variant", "identificationConfidence", "isAuthentic",
-            "psaGrade", "psaConfidence", "psaReason",
-            "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub", "bgsEdgesSub", "bgsSurfaceSub", "bgsReason",
-            "marketPricing",
-            "aceGrade", "aceConfidence", "aceReason",
-            "recommendationService", "recommendationVerdict", "recommendationReason",
-            "gradeSummary", "diagnostics"
+            "cardName", "setName", "cardNumber", "rarity", "language", "variant",
+            "identificationConfidence", "isAuthentic", "psaGrade", "psaConfidence",
+            "psaReason", "bgsGrade", "bgsConfidence", "bgsCenteringSub", "bgsCornersSub",
+            "bgsEdgesSub", "bgsSurfaceSub", "bgsReason", "marketPricing", "aceGrade",
+            "aceConfidence", "aceReason", "recommendationService", "recommendationVerdict",
+            "recommendationReason", "gradeSummary", "diagnostics"
           ]
         }
       }
